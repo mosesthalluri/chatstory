@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>ChatBook · Your book is being made</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital@0;1&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: #FAF6F0; color: #2C3E50;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  .container { max-width: 480px; margin: 0 auto; padding: 32px 20px; }
+  .brand {
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic; font-size: 28px;
+    text-align: center; color: #2C3E50; margin-bottom: 32px;
+  }
+
+  .status-card {
+    background: white; border-radius: 16px;
+    padding: 28px 24px; margin-bottom: 20px;
+    text-align: center;
+  }
+  .state-icon { font-size: 48px; margin-bottom: 12px; }
+  .state-title {
+    font-size: 18px; font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .state-msg { color: #7B9EA8; font-size: 14px; margin-bottom: 20px; }
+
+  .progress-bar {
+    background: #F5E6D8; height: 8px;
+    border-radius: 4px; overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .progress-fill {
+    background: #E8A87C; height: 100%;
+    transition: width 0.5s ease;
+    width: 0%;
+  }
+  .progress-pct { font-size: 12px; color: #999; }
+
+  .stats-card {
+    background: white; border-radius: 16px;
+    padding: 20px; margin-bottom: 20px;
+    display: none;
+  }
+  .stats-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic; font-size: 22px;
+    text-align: center; margin-bottom: 16px;
+  }
+  .stats-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 12px; margin-bottom: 16px;
+  }
+  .stat-mini {
+    background: #FFF8F0; padding: 14px;
+    border-radius: 10px; text-align: center;
+  }
+  .stat-mini-num {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 26px; color: #2C3E50;
+    line-height: 1;
+  }
+  .stat-mini-label {
+    font-size: 10px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: #888;
+    margin-top: 6px;
+  }
+
+  .actions {
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .btn {
+    padding: 14px 20px; border-radius: 100px;
+    text-align: center; font-weight: 600;
+    text-decoration: none; font-size: 15px;
+    border: none; cursor: pointer;
+    font-family: inherit;
+  }
+  .btn-primary {
+    background: #E8A87C; color: white;
+  }
+  .btn-secondary {
+    background: white; color: #2C3E50;
+    border: 1px solid #ddd;
+  }
+
+  .error-card {
+    background: #FEE; border: 1px solid #FCC;
+    border-radius: 12px; padding: 18px;
+    color: #A00; font-size: 14px;
+    line-height: 1.5; display: none;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="brand">ChatBook</div>
+
+  <div class="status-card" id="status-card">
+    <div class="state-icon" id="state-icon">⏳</div>
+    <div class="state-title" id="state-title">Starting up…</div>
+    <div class="state-msg" id="state-msg">Just a moment</div>
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+    <div class="progress-pct" id="progress-pct">0%</div>
+  </div>
+
+  <div class="stats-card" id="stats-card">
+    <div class="stats-title">Your story so far</div>
+    <div class="stats-grid">
+      <div class="stat-mini">
+        <div class="stat-mini-num" id="stat-msgs">—</div>
+        <div class="stat-mini-label">Messages</div>
+      </div>
+      <div class="stat-mini">
+        <div class="stat-mini-num" id="stat-days">—</div>
+        <div class="stat-mini-label">Days</div>
+      </div>
+      <div class="stat-mini">
+        <div class="stat-mini-num" id="stat-hour">—</div>
+        <div class="stat-mini-label">Active hour</div>
+      </div>
+      <div class="stat-mini">
+        <div class="stat-mini-num" id="stat-emoji">—</div>
+        <div class="stat-mini-label">Top emoji</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="actions" id="actions"></div>
+  <div class="error-card" id="error-card"></div>
+</div>
+
+<script>
+const jobId = "{{ job_id }}";
+const currency = "{{ currency }}";
+const price = "{{ price }}";
+
+const STATE_ICONS = {
+  queued: "⏳", parsing: "📖", analyzing: "📊",
+  writing: "✍️", rendering: "🎨", done: "✨", error: "⚠️"
+};
+const STATE_TITLES = {
+  queued: "Queued", parsing: "Reading your chat", analyzing: "Crunching the numbers",
+  writing: "Writing chapters", rendering: "Designing the book",
+  done: "Your book is ready", error: "Something went wrong"
+};
+
+let pollHandle = null;
+
+async function poll() {
+  try {
+    const resp = await fetch(`/api/status/${jobId}`);
+    const data = await resp.json();
+    render(data);
+    if (data.state === 'done' || data.state === 'error') {
+      clearInterval(pollHandle);
+    }
+  } catch (e) {
+    console.error('Poll error', e);
+  }
+}
+
+function render(s) {
+  document.getElementById('state-icon').textContent = STATE_ICONS[s.state] || '⏳';
+  document.getElementById('state-title').textContent = STATE_TITLES[s.state] || s.state;
+  document.getElementById('state-msg').textContent = s.message || '';
+  document.getElementById('progress-fill').style.width = (s.progress || 0) + '%';
+  document.getElementById('progress-pct').textContent = (s.progress || 0) + '%';
+
+  // Show stats once available
+  if (s.stats) {
+    const card = document.getElementById('stats-card');
+    card.style.display = 'block';
+    document.getElementById('stat-msgs').textContent = s.stats.total_messages?.toLocaleString() || '—';
+    document.getElementById('stat-days').textContent = s.stats.days_active || '—';
+    const h = s.stats.most_active_hour;
+    if (h !== undefined) {
+      const display = h === 0 ? '12am' : h < 12 ? `${h}am` : h === 12 ? '12pm' : `${h - 12}pm`;
+      document.getElementById('stat-hour').textContent = display;
+    }
+    if (s.stats.top_emojis && s.stats.top_emojis[0]) {
+      document.getElementById('stat-emoji').textContent = s.stats.top_emojis[0][0];
+    }
+  }
+
+  // Actions
+  const actions = document.getElementById('actions');
+  if (s.state === 'done') {
+    if (s.paid) {
+      actions.innerHTML = `
+        <a class="btn btn-primary" href="/full/${jobId}" target="_blank">
+          Download your book
+        </a>
+        <a class="btn btn-secondary" href="/preview/${jobId}" target="_blank">
+          See preview again
+        </a>`;
+    } else {
+      actions.innerHTML = `
+        <a class="btn btn-secondary" href="/preview/${jobId}" target="_blank">
+          📖 Open preview
+        </a>
+        <button class="btn btn-primary" onclick="pay()">
+          Unlock full book — ${currency}${price}
+        </button>`;
+    }
+  } else if (s.state === 'error') {
+    document.getElementById('error-card').style.display = 'block';
+    document.getElementById('error-card').textContent = s.error || 'Unknown error';
+  }
+}
+
+async function pay() {
+  // STUB — replace this fetch with real payment flow
+  const resp = await fetch(`/api/pay/${jobId}`, {method: 'POST'});
+  if (resp.ok) {
+    poll();
+  }
+}
+
+poll();
+pollHandle = setInterval(poll, 3000);
+</script>
+</body>
+</html>

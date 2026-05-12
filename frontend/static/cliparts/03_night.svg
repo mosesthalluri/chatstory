@@ -1,0 +1,25 @@
+<svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgN1" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#2C3E50"/>
+      <stop offset="100%" stop-color="#4A5F7A"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="200" fill="url(#bgN1)"/>
+  <circle cx="200" cy="80" r="42" fill="#FAF6F0"/>
+  <circle cx="215" cy="72" r="42" fill="#2C3E50"/>
+  <circle cx="190" cy="65" r="3" fill="#2C3E50" opacity="0.3"/>
+  <circle cx="180" cy="95" r="2" fill="#2C3E50" opacity="0.3"/>
+  <circle cx="205" cy="100" r="2.5" fill="#2C3E50" opacity="0.3"/>
+  <g fill="#FAF6F0">
+    <path d="M 60,40 l 1.5,4 l 4,1.5 l -4,1.5 l -1.5,4 l -1.5,-4 l -4,-1.5 l 4,-1.5 z"/>
+    <path d="M 100,75 l 1,2.7 l 2.7,1 l -2.7,1 l -1,2.7 l -1,-2.7 l -2.7,-1 l 2.7,-1 z"/>
+    <path d="M 280,130 l 1.2,3.2 l 3.2,1.2 l -3.2,1.2 l -1.2,3.2 l -1.2,-3.2 l -3.2,-1.2 l 3.2,-1.2 z"/>
+    <path d="M 45,140 l 1,2.7 l 2.7,1 l -2.7,1 l -1,2.7 l -1,-2.7 l -2.7,-1 l 2.7,-1 z"/>
+    <path d="M 270,55 l 0.8,2.2 l 2.2,0.8 l -2.2,0.8 l -0.8,2.2 l -0.8,-2.2 l -2.2,-0.8 l 2.2,-0.8 z"/>
+    <circle cx="80" cy="160" r="1.5"/>
+    <circle cx="250" cy="170" r="1.5"/>
+    <circle cx="140" cy="160" r="1.5"/>
+    <circle cx="160" cy="175" r="1.5"/>
+  </g>
+</svg>

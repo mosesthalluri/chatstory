@@ -1,0 +1,24 @@
+<svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgPP" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#C9DAC4"/>
+      <stop offset="100%" stop-color="#FAF6F0"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="200" fill="url(#bgPP)"/>
+  <path d="M 50,150 Q 100,100 160,90 Q 220,80 270,55" stroke="#7B9EA8" stroke-width="2.5" fill="none" stroke-dasharray="4,5" opacity="0.6"/>
+  <path d="M 180,60 L 280,90 L 200,110 L 210,140 L 195,115 L 180,60 Z" fill="#FAF6F0" stroke="#2C3E50" stroke-width="2.5"/>
+  <path d="M 200,110 L 280,90" stroke="#2C3E50" stroke-width="2" fill="none"/>
+  <path d="M 195,115 L 200,110" stroke="#2C3E50" stroke-width="2" fill="none"/>
+  <g fill="#E8A87C">
+    <circle cx="60" cy="50" r="4"/>
+    <circle cx="80" cy="45" r="3"/>
+    <circle cx="75" cy="60" r="2.5"/>
+  </g>
+  <g fill="#FAF6F0" opacity="0.8">
+    <ellipse cx="250" cy="40" rx="15" ry="6"/>
+    <ellipse cx="270" cy="38" rx="12" ry="5"/>
+    <ellipse cx="40" cy="120" rx="18" ry="7"/>
+    <ellipse cx="55" cy="115" rx="12" ry="5"/>
+  </g>
+</svg>

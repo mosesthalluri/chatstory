@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{{ title }}</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400;1,500&family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<style>
+@page { size: A5; margin: 0; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: 'Lora', Georgia, serif;
+  color: #2C3E50;
+  background: #FAF6F0;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.page {
+  width: 148mm; height: 210mm;
+  padding: 18mm 16mm;
+  page-break-after: always;
+  position: relative;
+  background: #FAF6F0;
+  overflow: hidden;
+}
+.page:last-child { page-break-after: auto; }
+/* Chapter pages: same padding as .page, but NOT a fixed height — let
+ * content flow naturally to a second physical page if the chapter is
+ * long. Without this, overflow:hidden silently truncates the chapter
+ * body mid-sentence. */
+.chapter-page {
+  width: 148mm;
+  min-height: 210mm;
+  padding: 18mm 16mm;
+  page-break-before: always;
+  page-break-after: always;
+  position: relative;
+  background: #FAF6F0;
+  box-sizing: border-box;
+}
+.chapter-page:last-child { page-break-after: auto; }
+/* Keep illustration with title (don't widow the title at the bottom
+ * of a page with the illustration overflowing) */
+.chapter-illo, .chapter-title, .chapter-when, .chapter-eyebrow {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+/* Keep pull-quote together */
+.pullquote { page-break-inside: avoid; break-inside: avoid; }
+
+/* Cover */
+.cover { display: flex; flex-direction: column; align-items: center;
+  justify-content: space-between; text-align: center; padding: 24mm 16mm; }
+.cover-label { font-family: 'Inter', sans-serif; font-size: 9pt;
+  letter-spacing: 0.45em; color: #E8A87C; font-weight: 600; text-transform: uppercase; }
+.cover-title { font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 64pt; font-weight: 400; font-style: italic; color: #2C3E50;
+  margin: 0; line-height: 0.95; }
+.cover-divider { width: 28mm; height: 1px; background: #2C3E50; margin: 6mm auto; }
+.cover-names { font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 18pt; font-style: italic; color: #7B9EA8; }
+.cover-illo { width: 88mm; max-height: 70mm; }
+.cover-dates { font-family: 'Inter', sans-serif; font-size: 10pt;
+  letter-spacing: 0.35em; color: #2C3E50; text-transform: uppercase; font-weight: 500; }
+
+/* Stats */
+.stats-header { text-align: center; margin-bottom: 7mm; }
+.stats-eyebrow { font-family: 'Inter', sans-serif; font-size: 9pt;
+  letter-spacing: 0.4em; color: #E8A87C; text-transform: uppercase; font-weight: 600; }
+.stats-title { font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 34pt; font-style: italic; color: #2C3E50;
+  margin: 4mm 0 2mm; line-height: 1; font-weight: 500; }
+.stats-subtitle { font-family: 'Lora', Georgia, serif; font-size: 10pt;
+  color: #7B9EA8; font-style: italic; }
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr;
+  gap: 4mm; margin-top: 4mm; }
+.stat-card { padding: 6mm 4mm; border-radius: 3mm; text-align: center; }
+.stat-card.peach { background: #F5D5C0; }
+.stat-card.sage { background: #C9DAC4; }
+.stat-card.blue { background: #B8C9D1; }
+.stat-card.gold { background: #E8D4A8; }
+.stat-card.cream { background: #F5E6D8; }
+.stat-number { font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 32pt; font-weight: 500; color: #2C3E50; line-height: 1; }
+.stat-label { font-family: 'Inter', sans-serif; font-size: 7pt;
+  letter-spacing: 0.18em; color: #2C3E50; text-transform: uppercase;
+  margin-top: 2.5mm; font-weight: 500; }
+.callout-box { margin-top: 4mm; padding: 5mm 6mm; background: white;
+  border: 1px dashed #E8A87C; border-radius: 3mm; text-align: center; }
+.callout-label { font-family: 'Inter', sans-serif; font-size: 7.5pt;
+  letter-spacing: 0.25em; color: #E8A87C; text-transform: uppercase; font-weight: 600; }
+.callout-text { font-family: 'Cormorant Garamond', Georgia, serif;
+  font-style: italic; font-size: 16pt; color: #2C3E50;
+  margin-top: 2mm; font-weight: 500; }
+
+/* Chapter */
+.chapter-eyebrow { font-family: 'Inter', sans-serif; font-size: 9pt;
+  letter-spacing: 0.45em; color: #E8A87C; text-transform: uppercase;
+  font-weight: 600; text-align: center; }
+.chapter-title { font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 32pt; font-style: italic; color: #2C3E50;
+  text-align: center; margin: 4mm 0 2mm; line-height: 1.05; font-weight: 500; }
+.chapter-when { font-family: 'Lora', serif; font-size: 10pt;
+  color: #7B9EA8; font-style: italic; text-align: center; margin-bottom: 5mm; }
+.chapter-illo { width: 100mm; max-height: 60mm; display: block; margin: 0 auto 5mm; }
+.chapter-illo svg, .chapter-illo img { width: 100%; height: auto; }
+.chapter-body { font-family: 'Lora', Georgia, serif; font-size: 10.5pt;
+  line-height: 1.65; color: #2C3E50; text-align: justify; }
+.chapter-body p { margin: 0 0 3.5mm; text-indent: 5mm; }
+.chapter-body p.first { text-indent: 0; }
+.chapter-body p.first::first-letter {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 36pt; float: left; line-height: 0.85;
+  margin: 1mm 2mm 0 0; color: #E8A87C; font-weight: 500;
+}
+.pullquote { margin: 5mm 4mm 0; padding: 4mm 6mm;
+  border-left: 2pt solid #E8A87C;
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-style: italic; font-size: 13pt; color: #2C3E50;
+  line-height: 1.4; font-weight: 400; }
+.pullquote-attr { font-style: normal; font-family: 'Inter', sans-serif;
+  font-size: 8pt; letter-spacing: 0.15em; color: #7B9EA8;
+  margin-top: 3mm; text-transform: uppercase; font-weight: 500; }
+
+/* Watermark for preview */
+.watermark { position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%) rotate(-25deg);
+  font-family: 'Inter', sans-serif; font-size: 60pt; font-weight: 700;
+  color: #E8A87C; opacity: 0.08; pointer-events: none;
+  text-transform: uppercase; letter-spacing: 0.2em; }
+
+/* Paywall */
+.preview-end-divider { display: flex; align-items: center;
+  justify-content: center; gap: 4mm; color: #B5A899;
+  font-family: 'Inter', sans-serif; font-size: 8.5pt;
+  letter-spacing: 0.35em; text-transform: uppercase;
+  font-weight: 500; margin: 8mm 0; }
+.preview-end-divider::before, .preview-end-divider::after {
+  content: ''; height: 1px; background: #B5A899; width: 30mm; display: block; }
+.unlock-box { margin-top: 4mm; padding: 7mm 7mm 8mm; background: white;
+  border-radius: 4mm; text-align: center; border: 1px solid #E8D4A8; }
+.unlock-eyebrow { font-family: 'Inter', sans-serif; font-size: 8pt;
+  letter-spacing: 0.35em; color: #E8A87C; text-transform: uppercase; font-weight: 600; }
+.unlock-title { font-family: 'Cormorant Garamond', Georgia, serif;
+  font-style: italic; font-size: 24pt; color: #2C3E50;
+  margin: 2mm 0 1mm; line-height: 1.05; font-weight: 500; }
+.unlock-sub { font-family: 'Lora', serif; font-size: 10pt;
+  color: #7B9EA8; font-style: italic; margin-top: 1mm; }
+.unlock-list { list-style: none; padding: 0; margin: 5mm 0 3mm;
+  font-family: 'Inter', sans-serif; font-size: 9.5pt; color: #2C3E50;
+  line-height: 1.85; text-align: left; display: inline-block; }
+.unlock-list li::before { content: '✦  '; color: #E8A87C; font-weight: 600; }
+.unlock-price { font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 32pt; font-weight: 500; color: #2C3E50;
+  margin: 3mm 0 1mm; line-height: 1; }
+.unlock-cta { display: inline-block; margin-top: 4mm; padding: 3.5mm 9mm;
+  background: #E8A87C; color: white; border-radius: 100px;
+  font-family: 'Inter', sans-serif; font-size: 10.5pt;
+  font-weight: 600; letter-spacing: 0.04em; }
+</style>
+</head>
+<body>
+
+<!-- Cover -->
+<div class="page cover">
+  {% if is_preview %}<div class="watermark">Preview</div>{% endif %}
+  <div class="cover-label">A Storybook</div>
+  <div>
+    <h1 class="cover-title">{{ title }}</h1>
+    <div class="cover-divider"></div>
+    <div class="cover-names">{{ subtitle }}</div>
+  </div>
+  <div class="cover-illo">
+    {% if cover_image %}{{ cover_image|safe }}{% endif %}
+  </div>
+  <div class="cover-dates">{{ date_range }}</div>
+</div>
+
+<!-- Stats / Wrapped page -->
+<div class="page">
+  {% if is_preview %}<div class="watermark">Preview</div>{% endif %}
+  <div class="stats-header">
+    <div class="stats-eyebrow">The Wrapped</div>
+    <h2 class="stats-title">Your story<br/>in numbers</h2>
+    <div class="stats-subtitle">
+      {{ stats.days_span }} days · {{ "{:,}".format(stats.total_messages) }} messages
+    </div>
+  </div>
+  <div class="stats-grid">
+    <div class="stat-card peach">
+      <div class="stat-number">{{ "{:,}".format(stats.total_messages) }}</div>
+      <div class="stat-label">Messages exchanged</div>
+    </div>
+    <div class="stat-card sage">
+      <div class="stat-number">{{ stats.days_active }}</div>
+      <div class="stat-label">Days of chatting</div>
+    </div>
+    <div class="stat-card blue">
+      <div class="stat-number">
+        {% if stats.most_active_hour < 12 %}{{ stats.most_active_hour }}am
+        {% elif stats.most_active_hour == 12 %}12pm
+        {% else %}{{ stats.most_active_hour - 12 }}pm{% endif %}
+      </div>
+      <div class="stat-label">Most active hour</div>
+    </div>
+    <div class="stat-card gold">
+      <div class="stat-number" style="font-size:36pt;">
+        {% if stats.top_emojis %}{{ stats.top_emojis[0][0] }}{% else %}💬{% endif %}
+      </div>
+      <div class="stat-label">Most used emoji</div>
+    </div>
+  </div>
+  {% if stats.inside_jokes %}
+  <div class="callout-box">
+    <div class="callout-label">Inside joke detected</div>
+    <div class="callout-text">"{{ stats.inside_jokes[0][0] }}"</div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Chapters -->
+{% for chapter in chapters %}
+  {% if is_preview and loop.index > preview_chapter_count %}
+    {# Skip — paywall comes next #}
+  {% else %}
+    <div class="chapter-page">
+      {% if is_preview and loop.index == preview_chapter_count %}<div class="watermark">Preview</div>{% endif %}
+      <div class="chapter-eyebrow">Chapter {{ loop.index }}</div>
+      <h2 class="chapter-title">{{ chapter.title }}</h2>
+      <div class="chapter-when">{{ chapter.when }}</div>
+      {% if chapter_images.get(chapter.index) %}
+        <div class="chapter-illo">{{ chapter_images[chapter.index]|safe }}</div>
+      {% endif %}
+      <div class="chapter-body">
+        {% set paragraphs = chapter.body.split("\n\n") %}
+        {% for para in paragraphs %}
+          {% if para.strip() %}
+            <p {% if loop.first %}class="first"{% endif %}>{{ para.strip() }}</p>
+          {% endif %}
+        {% endfor %}
+      </div>
+      {% if chapter.pull_quote %}
+        <div class="pullquote">
+          "{{ chapter.pull_quote }}"
+          {% if chapter.pull_quote_author %}
+            <div class="pullquote-attr">— {{ chapter.pull_quote_author }}</div>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endfor %}
+
+<!-- Paywall (preview only) -->
+{% if is_preview %}
+<div class="page">
+  <div class="chapter-eyebrow">End of Preview</div>
+  <h2 class="chapter-title">Your story<br/>continues</h2>
+  <div class="preview-end-divider">Preview Ends</div>
+  <div class="unlock-box">
+    <div class="unlock-eyebrow">Unlock</div>
+    <h3 class="unlock-title">Your complete story</h3>
+    <div class="unlock-sub">Read every chapter. Keep it forever.</div>
+    <ul class="unlock-list">
+      <li>{{ chapters|length - preview_chapter_count }} more illustrated chapters</li>
+      <li>The full Wrapped breakdown</li>
+      <li>High-resolution PDF, no watermark</li>
+    </ul>
+    <div class="unlock-price">{{ currency }}{{ full_price }}</div>
+    <div class="unlock-cta">Unlock the full book →</div>
+  </div>
+</div>
+{% endif %}
+
+</body>
+</html>

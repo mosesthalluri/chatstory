@@ -1,0 +1,81 @@
+"""
+Centralized settings. Loaded once at startup from .env.
+
+Anywhere in the codebase you need a setting, do:
+
+    from app.settings import settings
+    print(settings.GROQ_API_KEY)
+"""
+
+from pathlib import Path
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# Project root and storage paths. Paths are computed once here so the rest
+# of the codebase never hardcodes paths.
+BACKEND_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = BACKEND_ROOT.parent
+STORAGE_ROOT = BACKEND_ROOT / "storage"
+UPLOADS_DIR = STORAGE_ROOT / "uploads"
+JOBS_DIR = STORAGE_ROOT / "jobs"
+OUTPUT_DIR = STORAGE_ROOT / "output"
+TEMPLATES_DIR = PROJECT_ROOT / "frontend" / "templates"
+STATIC_DIR = PROJECT_ROOT / "frontend" / "static"
+
+# Make sure all storage directories exist
+for path in [UPLOADS_DIR, JOBS_DIR, OUTPUT_DIR]:
+    path.mkdir(parents=True, exist_ok=True)
+
+
+class Settings(BaseSettings):
+    """All settings loaded from .env file."""
+
+    # LLM
+    USE_OLLAMA: bool = False
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL_FAST: str = "llama-3.1-8b-instant"
+    GROQ_MODEL_STRONG: str = "llama-3.3-70b-versatile"
+    OLLAMA_MODEL_FAST: str = "llama3.1:8b"
+    OLLAMA_MODEL_STRONG: str = "llama3.1:8b"
+    OLLAMA_HOST: str = "http://localhost:11434"
+
+    # Images
+    # USE_GEMINI_IMAGES = False (default): pick from curated SVG cliparts
+    # in frontend/static/cliparts/. Zero API cost, instant, no failure
+    # modes. Recommended for development and small-scale production.
+    #
+    # USE_GEMINI_IMAGES = True: try Gemini AI generation first, fall back
+    # to clipart on failure. Set this only if you have paid Gemini access
+    # or want to spend your free-tier budget on illustrations.
+    USE_GEMINI_IMAGES: bool = False
+    GEMINI_API_KEY: str = ""
+    IMAGE_STYLE: str = "flat vector cartoon illustration, soft pastel colors"
+
+    # Filesystem (exposed on settings so image_gen can find cliparts)
+    PROJECT_ROOT: Path = PROJECT_ROOT
+    STATIC_DIR: Path = STATIC_DIR
+
+    # Book config
+    CHAPTERS_PER_BOOK: int = 8
+    PREVIEW_CHAPTERS: int = 1
+    CURRENCY_SYMBOL: str = "₹"
+    FULL_BOOK_PRICE: int = 399
+
+    # Storage
+    AUTO_DELETE_AFTER_HOURS: int = 24
+    MAX_UPLOAD_SIZE_MB: int = 200
+    MAX_MESSAGES: int = 300_000
+
+    # App
+    SECRET_KEY: str = "change-me"
+    DEBUG: bool = True
+
+    model_config = SettingsConfigDict(
+        env_file=str(BACKEND_ROOT / ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+
+# Single shared instance
+settings = Settings()

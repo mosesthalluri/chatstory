@@ -1,0 +1,20 @@
+<svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+  <rect width="320" height="200" fill="#F5E6D8"/>
+  <rect x="130" y="35" width="60" height="130" rx="9" fill="#2C3E50"/>
+  <rect x="136" y="45" width="48" height="105" rx="3" fill="#FAF6F0"/>
+  <rect x="153" y="38" width="14" height="3" rx="1.5" fill="#FAF6F0"/>
+  <circle cx="160" cy="158" r="3" fill="#FAF6F0"/>
+  <rect x="142" y="55" width="36" height="12" rx="3" fill="#E8A87C"/>
+  <rect x="142" y="72" width="36" height="12" rx="3" fill="#7B9EA8"/>
+  <rect x="142" y="89" width="36" height="12" rx="3" fill="#E8A87C"/>
+  <circle cx="195" cy="50" r="14" fill="#E8A87C" stroke="#FAF6F0" stroke-width="2.5"/>
+  <text x="195" y="55" font-family="sans-serif" font-size="14" fill="#FAF6F0" text-anchor="middle" font-weight="700">3</text>
+  <g fill="#7B9EA8" opacity="0.5">
+    <circle cx="60" cy="60" r="3"/>
+    <circle cx="80" cy="80" r="2.5"/>
+    <circle cx="245" cy="100" r="3"/>
+    <circle cx="260" cy="130" r="2.5"/>
+    <path d="M 50,140 l 1.2,3.2 l 3.2,1.2 l -3.2,1.2 l -1.2,3.2 l -1.2,-3.2 l -3.2,-1.2 l 3.2,-1.2 z"/>
+    <path d="M 250,55 l 1,2.7 l 2.7,1 l -2.7,1 l -1,2.7 l -1,-2.7 l -2.7,-1 l 2.7,-1 z"/>
+  </g>
+</svg>

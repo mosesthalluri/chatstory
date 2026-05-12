@@ -1,0 +1,24 @@
+<svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgA1" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#FAF6F0"/>
+      <stop offset="100%" stop-color="#F5E6D8"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="200" fill="url(#bgA1)"/>
+  <path d="M 50,55 Q 50,40 65,40 L 145,40 Q 160,40 160,55 L 160,90 Q 160,105 145,105 L 110,105 L 95,118 L 98,105 L 65,105 Q 50,105 50,90 Z"
+        fill="#E8A87C" stroke="#C77B5A" stroke-width="2"/>
+  <circle cx="80" cy="72" r="4" fill="#FAF6F0"/>
+  <circle cx="100" cy="72" r="4" fill="#FAF6F0"/>
+  <circle cx="120" cy="72" r="4" fill="#FAF6F0"/>
+  <path d="M 165,95 Q 165,80 180,80 L 265,80 Q 280,80 280,95 L 280,135 Q 280,150 265,150 L 220,150 L 205,163 L 208,150 L 180,150 Q 165,150 165,135 Z"
+        fill="#7B9EA8" stroke="#5A7F8A" stroke-width="2"/>
+  <circle cx="200" cy="115" r="4" fill="#FAF6F0"/>
+  <circle cx="220" cy="115" r="4" fill="#FAF6F0"/>
+  <circle cx="240" cy="115" r="4" fill="#FAF6F0"/>
+  <g fill="#E8A87C">
+    <path d="M 30,25 l 1.2,3.2 l 3.2,1.2 l -3.2,1.2 l -1.2,3.2 l -1.2,-3.2 l -3.2,-1.2 l 3.2,-1.2 z"/>
+    <path d="M 290,40 l 1,2.7 l 2.7,1 l -2.7,1 l -1,2.7 l -1,-2.7 l -2.7,-1 l 2.7,-1 z"/>
+    <path d="M 280,170 l 1.4,3.6 l 3.6,1.4 l -3.6,1.4 l -1.4,3.6 l -1.4,-3.6 l -3.6,-1.4 l 3.6,-1.4 z"/>
+  </g>
+</svg>
