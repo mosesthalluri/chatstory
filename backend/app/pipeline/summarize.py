@@ -11,6 +11,7 @@ All summaries are kept short. The point is structure, not prose.
 
 import asyncio
 from datetime import date
+from typing import Optional
 
 from .. import llm
 from ..models import Message
@@ -52,9 +53,9 @@ def _format_message_for_llm(m: Message) -> str:
     return f"{time_str} {m.sender}: {text}"
 
 
-async def summarize_day(date_obj: date, messages: list[Message]) -> str:
+async def summarize_day(date_obj: date, messages: list[Message]) -> Optional[str]:
     if len(messages) < 5:
-        return ""  # too short to be meaningful
+        return None  # too short to be meaningful
 
     # Cap transcript to ~400 messages to keep prompt reasonable
     sample = messages[:400]
@@ -70,7 +71,8 @@ async def summarize_day(date_obj: date, messages: list[Message]) -> str:
             temperature=0.2,
         )
     except llm.LLMError as e:
-        return f"(Day summary failed: {e})"
+        print(f"[summarize] day {date_obj.isoformat()} failed: {e}")
+        return None
 
 
 async def summarize_all_days(
@@ -91,12 +93,19 @@ async def summarize_all_days(
     async def worker(d: date, msgs: list[Message]):
         nonlocal completed
         async with semaphore:
-            results[d] = await summarize_day(d, msgs)
+            summary = await summarize_day(d, msgs)
+            if summary:
+                results[d] = summary
             completed += 1
             if on_progress:
                 on_progress(completed, total)
 
     await asyncio.gather(*(worker(d, m) for d, m in active.items()))
+    if total > 0 and not results:
+        raise llm.LLMError(
+            "LLM summarization failed for every active day. "
+            "Check that the configured LLM service is reachable."
+        )
     return results
 
 
@@ -114,7 +123,7 @@ Daily summaries for this {period}:
 {period} summary:"""
 
 
-async def rollup(period: str, summaries_text: str) -> str:
+async def rollup(period: str, summaries_text: str) -> Optional[str]:
     try:
         return await llm.complete(
             [
@@ -125,7 +134,8 @@ async def rollup(period: str, summaries_text: str) -> str:
             temperature=0.3,
         )
     except llm.LLMError as e:
-        return f"(Rollup failed: {e})"
+        print(f"[summarize] {period} rollup failed: {e}")
+        return None
 
 
 async def summarize_weeks(day_summaries: dict[date, str], messages: list[Message]) -> dict[date, str]:
@@ -145,7 +155,9 @@ async def summarize_weeks(day_summaries: dict[date, str], messages: list[Message
         )
         if not block.strip():
             continue
-        out[week_start] = await rollup("week", block)
+        summary = await rollup("week", block)
+        if summary:
+            out[week_start] = summary
     return out
 
 
@@ -168,7 +180,9 @@ async def summarize_months(week_summaries: dict[date, str], messages: list[Messa
         )
         if not block.strip():
             continue
-        out[month_start] = await rollup("month", block)
+        summary = await rollup("month", block)
+        if summary:
+            out[month_start] = summary
     return out
 
 
@@ -196,7 +210,7 @@ ARC 2: [title]
 
 async def identify_arc(month_summaries: dict[date, str], span_days: int) -> str:
     if not month_summaries:
-        return "No data."
+        return "No broader arc available. Focus on the source messages for each chapter."
 
     summaries_text = "\n\n".join(
         f"{m.strftime('%B %Y')}: {s}"
@@ -213,4 +227,8 @@ async def identify_arc(month_summaries: dict[date, str], span_days: int) -> str:
             temperature=0.4,
         )
     except llm.LLMError as e:
-        return f"(Arc identification failed: {e})"
+        print(f"[summarize] arc identification failed: {e}")
+        return (
+            "Broader arc unavailable. Focus on the source messages for each "
+            "chapter and avoid adding context that is not shown there."
+        )

@@ -129,6 +129,18 @@ def _resolve_output_path(stored_path: str) -> Path | None:
     return None
 
 
+def _find_uploaded_file(job_id: str) -> Path | None:
+    """Find the original upload for a job so the LLM/PDF work can be rerun
+    without making the user upload the same file again."""
+    upload_dir = UPLOADS_DIR / job_id
+    if not upload_dir.exists():
+        return None
+    files = [p for p in upload_dir.iterdir() if p.is_file()]
+    if not files:
+        return None
+    return sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)[0]
+
+
 @app.get("/preview/{job_id}")
 async def preview_pdf(job_id: str):
     s = jobs.load(job_id)
@@ -171,6 +183,43 @@ async def full_pdf(job_id: str):
     return FileResponse(full_path, media_type="application/pdf", filename="full_book.pdf")
 
 
+@app.get("/normalized/{job_id}/txt")
+async def normalized_txt(job_id: str):
+    """Download the normalized text — what the parser actually extracted
+    from the user's raw input, in canonical [YYYY-MM-DD HH:MM:SS] sender: text
+    format. Useful for verifying before chapter generation runs, and
+    debugging when a chapter looks wrong."""
+    s = jobs.load(job_id)
+    if s is None:
+        raise HTTPException(404, "Job not found")
+    if not s.normalized_txt:
+        # Fallback: try canonical location
+        canonical = OUTPUT_DIR / job_id / "normalized.txt"
+        if canonical.exists():
+            return FileResponse(canonical, media_type="text/plain",
+                                filename="normalized.txt")
+        raise HTTPException(404, "Normalized output not available yet")
+    path = _resolve_output_path(s.normalized_txt)
+    if path is None:
+        raise HTTPException(404, "Normalized file missing")
+    return FileResponse(path, media_type="text/plain",
+                        filename="normalized.txt")
+
+
+@app.get("/normalized/{job_id}/summary")
+async def normalized_summary(job_id: str):
+    """Return the diagnostic summary as JSON. What was detected, how
+    many messages, how many filtered as noise, which senders, etc."""
+    s = jobs.load(job_id)
+    if s is None:
+        raise HTTPException(404, "Job not found")
+    canonical = OUTPUT_DIR / job_id / "summary.json"
+    if not canonical.exists():
+        raise HTTPException(404, "Summary not yet available")
+    import json as _json
+    return _json.loads(canonical.read_text(encoding="utf-8"))
+
+
 @app.post("/api/pay/{job_id}")
 async def pay_stub(job_id: str):
     """STUB: marks job as paid. Replace with real payment webhook.
@@ -203,6 +252,39 @@ async def retry(job_id: str, background_tasks: BackgroundTasks):
     # Kick off retry in background, immediately return so the user can
     # watch progress on the status page.
     background_tasks.add_task(retry_render, job_id)
+    return {"ok": True, "status_url": f"/job/{job_id}"}
+
+
+@app.post("/api/rewrite/{job_id}")
+async def rewrite_story(job_id: str, background_tasks: BackgroundTasks):
+    """Re-run story generation for an existing upload.
+
+    This is intentionally heavier than /api/retry: it redoes the LLM story
+    pass and PDF render, but it does not require the user to upload the chat
+    again. Use it after prompt/code changes or when the normalized input looks
+    good but the generated prose needs another pass.
+    """
+    s = jobs.load(job_id)
+    if s is None:
+        raise HTTPException(404, "Job not found")
+
+    upload_path = _find_uploaded_file(job_id)
+    if upload_path is None:
+        raise HTTPException(
+            404,
+            "Original upload not found for this job. Please upload again."
+        )
+
+    jobs.update(
+        job_id,
+        state="queued",
+        progress=0,
+        message="Rewriting story from the saved upload...",
+        error="",
+        preview_pdf="",
+        full_pdf="",
+    )
+    background_tasks.add_task(run_pipeline, job_id, upload_path)
     return {"ok": True, "status_url": f"/job/{job_id}"}
 
 

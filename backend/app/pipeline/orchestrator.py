@@ -14,7 +14,7 @@ from pathlib import Path
 
 from .. import models
 from ..parsers import parse_chat
-from ..pipeline import stats, chunker, summarize, chapter_gen
+from ..pipeline import stats, chunker, chapter_gen
 from ..services import image_gen, pdf_render, jobs
 from ..settings import OUTPUT_DIR, settings
 
@@ -42,9 +42,42 @@ def _load_checkpoint(job_id: str) -> dict | None:
 async def run_pipeline(job_id: str, upload_path: Path) -> None:
     """End-to-end pipeline. Updates job status as it goes."""
     try:
-        # 1. Parse
-        jobs.update(job_id, state="parsing", progress=5, message="Reading chat file…")
+        # Initialize phase tracking
+        phases = [
+            {"name": "Parsing", "status": "in_progress", "progress": 0},
+            {"name": "Analyzing", "status": "pending", "progress": 0},
+            {"name": "Emotional Extraction", "status": "pending", "progress": 0},
+            {"name": "Story Writing", "status": "pending", "progress": 0},
+            {"name": "Rendering", "status": "pending", "progress": 0},
+        ]
+
+        # 1. Parse + normalize. Normalization writes a canonical
+        #    representation of the parsed input to storage/output/<job>/
+        #    so the user can verify what was extracted before the LLM runs.
+        from . import normalizer
+        jobs.update(job_id, state="parsing", progress=5, message="Reading chat file…", phases=phases)
         parsed = parse_chat(upload_path)
+
+        # Persist normalized outputs immediately. Even if the rest fails,
+        # the user can inspect what we parsed.
+        norm_dir = OUTPUT_DIR / job_id
+        try:
+            norm_summary, norm_txt_path, norm_json_path = (
+                normalizer.write_normalized_outputs(upload_path, norm_dir)
+            )
+            jobs.update(
+                job_id,
+                normalized_txt=str(norm_txt_path.relative_to(OUTPUT_DIR.parent)),
+                normalized_json=str(norm_json_path.relative_to(OUTPUT_DIR.parent)),
+            )
+            print(f"[normalizer] {norm_summary.detected_format}: "
+                  f"{norm_summary.text_messages} text + "
+                  f"{norm_summary.media_messages} media, "
+                  f"{norm_summary.days_active}/{norm_summary.days_span} days")
+        except Exception as e:
+            # Normalization failure shouldn't kill the whole pipeline,
+            # just log and continue.
+            print(f"[normalizer] failed to persist: {e}")
 
         if parsed.message_count > settings.MAX_MESSAGES:
             raise ValueError(
@@ -53,44 +86,43 @@ async def run_pipeline(job_id: str, upload_path: Path) -> None:
                 f"shorter date range."
             )
 
+        # Mark parsing complete
+        phases[0]["status"] = "done"
+        phases[0]["progress"] = 100
+        phases[1]["status"] = "in_progress"
+
         # 2. Stats
-        jobs.update(job_id, state="analyzing", progress=15, message="Computing stats…")
+        jobs.update(job_id, state="analyzing", progress=15, message="Computing stats…", phases=phases)
         chat_stats = stats.compute_stats(parsed)
         jobs.update(job_id, stats=chat_stats)
 
-        # 3. Day digests
-        active_days = sum(
-            1 for _, msgs in chunker.by_day(parsed.messages).items()
-            if len(msgs) >= 5
-        )
+        # 3. Skip compressed summary hierarchy.
+        #
+        # The book writer now works like a careful human commentator: it walks
+        # the original chat in small chronological windows and carries short
+        # factual memory forward. Day/week/month summaries made the model
+        # spend context on compressed abstractions and caused exactly the
+        # "missed the real conversation" failure we are avoiding.
         jobs.update(
-            job_id, state="analyzing", progress=20,
-            message=f"Summarizing {active_days} active days…"
+            job_id,
+            state="analyzing",
+            progress=70,
+            message="Preparing for story generation...",
+        )
+        month_summaries = {}
+        arc = (
+            "No compressed arc. Write from the original messages in order, "
+            "carrying only factual context forward."
         )
 
-        def day_progress(done, total):
-            # Day summarization spans progress 20 → 60
-            pct = 20 + int(40 * done / max(total, 1))
-            jobs.update(job_id, progress=pct, message=f"Summarized {done}/{total} days")
+        # Mark analyzing complete, start writing phases
+        phases[1]["status"] = "done"
+        phases[1]["progress"] = 100
+        phases[2]["status"] = "in_progress"
+        phases[3]["status"] = "in_progress"
 
-        day_summaries = await summarize.summarize_all_days(
-            parsed.messages, on_progress=day_progress
-        )
-
-        # 4. Week digests
-        jobs.update(job_id, progress=62, message="Rolling up to weeks…")
-        week_summaries = await summarize.summarize_weeks(day_summaries, parsed.messages)
-
-        # 5. Month digests
-        jobs.update(job_id, progress=70, message="Rolling up to months…")
-        month_summaries = await summarize.summarize_months(week_summaries, parsed.messages)
-
-        # 6. Book arc
-        jobs.update(job_id, progress=75, message="Identifying narrative arcs…")
-        arc = await summarize.identify_arc(month_summaries, chat_stats["days_span"])
-
-        # 7. Chapter generation
-        jobs.update(job_id, state="writing", progress=78, message="Writing chapters…")
+        # 7. Chapter generation (with two-pass system)
+        jobs.update(job_id, state="writing", progress=78, message="Writing chapters…", phases=phases)
         # CHAPTERS_PER_BOOK=0 means "auto" — pick based on chat length.
         # Any positive value forces that exact count.
         if settings.CHAPTERS_PER_BOOK and settings.CHAPTERS_PER_BOOK > 0:
@@ -109,14 +141,25 @@ async def run_pipeline(job_id: str, upload_path: Path) -> None:
                 arc_context=arc,
             )
             chapters.append(ch)
+            progress = 78 + int(10 * i / len(chapter_chunks))
+            phases[2]["progress"] = int(50 * i / len(chapter_chunks))
+            phases[3]["progress"] = int(100 * i / len(chapter_chunks))
             jobs.update(
                 job_id,
-                progress=78 + int(10 * i / len(chapter_chunks)),
-                message=f"Wrote chapter {i}/{len(chapter_chunks)}",
+                progress=progress,
+                message=f"Writing chapter {i}/{len(chapter_chunks)}…",
+                phases=phases,
             )
 
+        # Mark writing complete
+        phases[2]["status"] = "done"
+        phases[2]["progress"] = 100
+        phases[3]["status"] = "done"
+        phases[3]["progress"] = 100
+        phases[4]["status"] = "in_progress"
+
         # 8. Image picking (cliparts by default, Gemini if configured)
-        jobs.update(job_id, state="rendering", progress=88, message="Picking illustrations…")
+        jobs.update(job_id, state="rendering", progress=88, message="Picking illustrations…", phases=phases)
         image_dir = OUTPUT_DIR / job_id / "images"
         chapter_images, image_stats = await image_gen.generate_images_for_chapters(
             [(ch.index, ch.illustration_prompt) for ch in chapters],
@@ -200,7 +243,14 @@ async def _render_pdfs_from_data(
     subtitle = " & ".join(names[:2])
     first = stats_data["first_message_date"][:10]
     last = stats_data["last_message_date"][:10]
-    date_range = f"{first} — {last}"
+    # Single-day chats shouldn't show "2025-08-08 — 2025-08-08" twice.
+    # Multi-day chats get a readable range.
+    if first == last:
+        from datetime import date as _date
+        d = _date.fromisoformat(first)
+        date_range = d.strftime("%B %d, %Y")
+    else:
+        date_range = f"{first} — {last}"
 
     preview_html = pdf_render.render_book_html(
         title=title, subtitle=subtitle, date_range=date_range,

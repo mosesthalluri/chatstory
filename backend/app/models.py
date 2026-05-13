@@ -83,6 +83,13 @@ class JobStatus:
     full_pdf: Optional[str] = None
     paid: bool = False
     stats: Optional[dict] = None  # dropped here when computed, for the UI
+    # Normalization artifacts — what the parser actually extracted from
+    # the user's raw input. Made available immediately after parsing so
+    # users can verify before paying for chapter generation.
+    normalized_txt: Optional[str] = None
+    normalized_json: Optional[str] = None
+    # Phase tracking for detailed progress display
+    phases: Optional[list[dict]] = None  # [{"name": "...", "status": "done|in_progress|pending", "progress": 0-100}]
 
     def to_dict(self) -> dict:
         d = asdict(self)

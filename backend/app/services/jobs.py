@@ -66,6 +66,9 @@ def update(
     full_pdf: str | None = None,
     paid: bool | None = None,
     stats: dict | None = None,
+    normalized_txt: str | None = None,
+    normalized_json: str | None = None,
+    phases: list[dict] | None = None,
 ) -> JobStatus | None:
     status = load(job_id)
     if status is None:
@@ -78,5 +81,8 @@ def update(
     if full_pdf is not None: status.full_pdf = full_pdf
     if paid is not None: status.paid = paid
     if stats is not None: status.stats = stats
+    if normalized_txt is not None: status.normalized_txt = normalized_txt
+    if normalized_json is not None: status.normalized_json = normalized_json
+    if phases is not None: status.phases = phases
     save(status)
     return status

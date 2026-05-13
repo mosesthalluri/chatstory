@@ -159,17 +159,29 @@ def _split_joined_lines(text: str) -> str:
 
 
 def _classify_noise(text: str) -> MessageKind | None:
-    """Return a MessageKind tag if the text is noise, else None."""
+    """Return a MessageKind tag if the text is noise, else None.
+
+    CRITICAL: A message starting with 'X sent an attachment.' is a
+    media share, even when followed by caption text. The caption is the
+    reel/song/video's own text — NOT something the sender typed.
+    Misclassifying these as TEXT (because they have words after the
+    prefix) lets reel captions slip through as 'real messages' and
+    become pull-quotes attributed to the sender. This was the root
+    cause of the 'Meri tarah tu aahey bharey...' bug.
+    """
     if RE_REACTION.match(text):
         return MessageKind.REACTION
-    stripped = RE_ATTACHMENT_PREFIX.sub("", text).strip()
-    if not stripped:
+    # ANY message with 'sent an attachment.' is media-share — the text
+    # after the prefix is the SHARED content's caption, not the user's
+    # words. We preserve the caption for [SHARED MEDIA] context but
+    # the kind is media-placeholder so validators reject it as a quote.
+    if RE_ATTACHMENT_PREFIX.match(text):
         return MessageKind.MEDIA_PLACEHOLDER
-    if RE_URL_ONLY.match(stripped) or RE_HASHTAGS_ONLY.match(stripped):
+    if RE_URL_ONLY.match(text) or RE_HASHTAGS_ONLY.match(text):
         return MessageKind.MEDIA_PLACEHOLDER
-    if RE_URL_WITH_SHORT_PREFIX.match(stripped):
+    if RE_URL_WITH_SHORT_PREFIX.match(text):
         return MessageKind.MEDIA_PLACEHOLDER
-    if RE_DOTS_ONLY.match(stripped):
+    if RE_DOTS_ONLY.match(text):
         return MessageKind.MEDIA_PLACEHOLDER
     return None
 
@@ -255,13 +267,14 @@ def parse(path: Path) -> ParsedChat:
             else:
                 last_real_date = ts
 
-            # Classify and clean text
+            # Classify the message, then clean its text regardless of kind.
+            # MEDIA_PLACEHOLDER messages keep their cleaned caption so
+            # downstream code can show "[SHARED MEDIA] <caption>" to the LLM.
             kind = _classify_noise(text_content) or MessageKind.TEXT
-            if kind == MessageKind.TEXT:
-                cleaned = _clean_text(text_content)
-                if not cleaned:
-                    kind = MessageKind.MEDIA_PLACEHOLDER
-                text_content = cleaned
+            cleaned = _clean_text(text_content)
+            if kind == MessageKind.TEXT and not cleaned:
+                kind = MessageKind.MEDIA_PLACEHOLDER
+            text_content = cleaned
             if kind != MessageKind.TEXT:
                 noise_filtered += 1
 

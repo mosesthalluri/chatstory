@@ -33,6 +33,37 @@ def _filter_noise(messages: list[Message]) -> list[Message]:
     ]
 
 
+def _sort_chronologically(messages: list[Message]) -> tuple[list[Message], bool]:
+    """Return messages oldest-first while preserving sensible tie order.
+
+    Some exports, especially manually cleaned Instagram text dumps, arrive
+    newest-first. The rest of the pipeline assumes chronological order for
+    response-time stats, chapter ranges, and consecutive-turn merging. If the
+    input mostly moves backward in time, reverse it first so messages with the
+    same timestamp keep their likely conversational order after sorting.
+    """
+    if len(messages) < 2:
+        return messages, False
+
+    increases = 0
+    decreases = 0
+    for prev, cur in zip(messages, messages[1:]):
+        if cur.timestamp > prev.timestamp:
+            increases += 1
+        elif cur.timestamp < prev.timestamp:
+            decreases += 1
+
+    working = list(reversed(messages)) if decreases > increases else list(messages)
+    ordered = [
+        msg for _, msg in sorted(
+            enumerate(working),
+            key=lambda item: (item[1].timestamp, item[0]),
+        )
+    ]
+    changed = any(a is not b for a, b in zip(messages, ordered))
+    return ordered, changed
+
+
 def _merge_consecutive(messages: list[Message], gap_seconds: int = 30) -> list[Message]:
     """Merge messages from the same sender within `gap_seconds` of each
     other. Cuts message count for fast typers without losing content."""
@@ -76,16 +107,21 @@ def parse_chat(path: Path) -> ParsedChat:
         )
 
     original_count = len(result.messages)
-    cleaned = _filter_noise(result.messages)
+    ordered, reordered = _sort_chronologically(result.messages)
+    cleaned = _filter_noise(ordered)
     pre_merge_count = len(cleaned)
     cleaned = _merge_consecutive(cleaned)
+
+    parser_warnings = list(result.parser_warnings)
+    if reordered:
+        parser_warnings.append("Reordered messages chronologically")
 
     return ParsedChat(
         messages=cleaned,
         detected_format=result.detected_format,
         senders=result.senders,
         raw_message_count=pre_merge_count,
-        parser_warnings=result.parser_warnings + [
+        parser_warnings=parser_warnings + [
             f"Filtered out {original_count - pre_merge_count} noise messages",
             f"After merging consecutive turns: {len(cleaned)} messages",
         ],

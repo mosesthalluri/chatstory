@@ -8,6 +8,7 @@ Anywhere in the codebase you need a setting, do:
 """
 
 from pathlib import Path
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,6 +39,10 @@ class Settings(BaseSettings):
     OLLAMA_MODEL_FAST: str = "llama3.1:8b"
     OLLAMA_MODEL_STRONG: str = "llama3.1:8b"
     OLLAMA_HOST: str = "http://localhost:11434"
+    # Ollama context window. The commentary writer uses small sequential
+    # scene prompts, so 8192 is a better fit for i7/8GB local machines than
+    # a large 16K context. Increase only if your model and RAM can handle it.
+    OLLAMA_NUM_CTX: int = 8192
 
     # Images
     # USE_GEMINI_IMAGES = False (default): pick from curated SVG cliparts
@@ -69,6 +74,23 @@ class Settings(BaseSettings):
     # App
     SECRET_KEY: str = "change-me"
     DEBUG: bool = True
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def _parse_debug(cls, value):
+        """Accept deployment-style DEBUG values from .env.
+
+        Pydantic already handles true/false, but real env files often use
+        words like "release" or "production". Treat those as debug off
+        instead of failing app startup.
+        """
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"release", "prod", "production", "off", "no", "0"}:
+                return False
+            if normalized in {"debug", "dev", "development", "on", "yes", "1"}:
+                return True
+        return value
 
     model_config = SettingsConfigDict(
         env_file=str(BACKEND_ROOT / ".env"),
