@@ -22,47 +22,47 @@ PATTERNS = {
     "hobbies": {
         "keywords": ["paint", "sketch", "book", "read", "photography", "plant", "gym", "yoga", "dance", "cook", "bake"],
         "ideas": {
-            "low_budget": ["A curated hobby supply kit", "A beautiful notebook for ideas"],
-            "medium_budget": ["A workshop or class pass", "Upgraded tools for their favorite hobby"],
-            "premium": ["A full starter-to-pro kit", "A weekend retreat around that interest"],
+            "low_budget": ["A curated hobby kit from Amazon/Meesho", "A personalized notebook with their recurring phrase"],
+            "medium_budget": ["A local workshop/class pass", "Upgraded tools for their favorite hobby"],
+            "premium": ["A full hobby upgrade box", "A weekend retreat around that interest"],
         },
     },
     "music": {
         "keywords": ["spotify", "playlist", "song", "album", "concert", "guitar", "piano", "music", "singer"],
         "ideas": {
-            "low_budget": ["A printed playlist card with a small keepsake", "A custom phone wallpaper of shared songs"],
-            "medium_budget": ["Concert tickets or a listening-room date", "Quality earbuds case and music journal"],
+            "low_budget": ["A Spotify-code keychain/card", "A custom phone wallpaper of shared songs"],
+            "medium_budget": ["BookMyShow concert/movie-music night", "Quality earbuds case and music journal"],
             "premium": ["Premium headphones", "A live music getaway"],
         },
     },
     "travel": {
         "keywords": ["trip", "flight", "hotel", "beach", "mountain", "travel", "vacation", "passport", "roadtrip"],
         "ideas": {
-            "low_budget": ["A mini travel pouch", "A map print of a place they mention"],
-            "medium_budget": ["A planned day trip", "Packing cubes and a travel comfort set"],
-            "premium": ["A surprise weekend stay", "Flight fund or experience voucher"],
+            "low_budget": ["A mini travel pouch", "A framed map print of a place they mention"],
+            "medium_budget": ["A planned day trip nearby", "Packing cubes and a travel comfort set"],
+            "premium": ["A surprise weekend stay", "Flight/train fund or experience voucher"],
         },
     },
     "stress": {
         "keywords": ["tired", "stress", "stressed", "anxious", "overwhelmed", "exam", "deadline", "workload", "burnout"],
         "ideas": {
-            "low_budget": ["A comfort snack and handwritten reset note", "A calming tea or sleep kit"],
-            "medium_budget": ["Spa or massage voucher", "Weighted blanket or sunrise lamp"],
+            "low_budget": ["A comfort snack box with a handwritten reset note", "A calming chai/tea and sleep kit"],
+            "medium_budget": ["Urban Company spa/massage voucher", "Weighted blanket or sunrise lamp"],
             "premium": ["Wellness staycation", "Therapy or coaching support fund"],
         },
     },
     "food": {
         "keywords": ["coffee", "tea", "pizza", "sushi", "burger", "cake", "chocolate", "restaurant", "dinner", "food"],
         "ideas": {
-            "low_budget": ["Their favorite snack box", "A coffee date kit"],
-            "medium_budget": ["Dinner at a saved restaurant", "A cooking class together"],
-            "premium": ["Chef's table experience", "A premium coffee or dessert subscription"],
+            "low_budget": ["Their favorite Indian snack box", "A coffee date kit"],
+            "medium_budget": ["Dinner at a restaurant they mentioned", "A cooking class together"],
+            "premium": ["Chef's table experience", "A premium coffee/dessert subscription"],
         },
     },
     "gaming": {
         "keywords": ["game", "gaming", "xbox", "playstation", "ps5", "steam", "valorant", "minecraft", "fortnite"],
         "ideas": {
-            "low_budget": ["In-game currency or a small Steam gift card", "A cable organizer for their setup"],
+            "low_budget": ["In-game currency or a small Steam/PlayStation gift card", "A cable organizer for their setup"],
             "medium_budget": ["Controller accessories or desk lighting", "A co-op game night bundle"],
             "premium": ["Gaming chair upgrade", "Console or monitor fund"],
         },
@@ -121,13 +121,17 @@ def _ideas_for(category: str, signal: dict[str, Any]) -> list[dict[str, str]]:
     if signal["score"] <= 0:
         return []
     ideas = []
+    quote = signal["examples"][0]["text"] if signal["examples"] else ""
+    sender = signal["examples"][0]["sender"] if signal["examples"] else ""
     for budget, labels in PATTERNS[category]["ideas"].items():
         for label in labels:
             ideas.append({
                 "category": category,
                 "budget": budget,
                 "title": label,
-                "reason": f"Detected {', '.join(signal['keywords'].keys()) or category} in the chat.",
+                "reason": f"Suggested because {', '.join(signal['keywords'].keys()) or category} appears repeatedly in the chat.",
+                "quote": quote,
+                "quote_sender": sender,
             })
     return ideas
 
@@ -161,6 +165,11 @@ def compute_gifts(messages: list[Message], detected_format: str, senders: list[s
         },
         "music_links": scanned["music_links"],
         "support_patterns": scanned["support_by_sender"],
+        "teasers": [
+            "We found one gift idea tied to emotional support patterns.",
+            "Some recommendations are locked because they use direct supporting quotes.",
+            "Premium ideas connect routines, stress, and shared experiences.",
+        ],
         "suggestions": {
             "low_budget": grouped["low_budget"][:8],
             "medium_budget": grouped["medium_budget"][:8],

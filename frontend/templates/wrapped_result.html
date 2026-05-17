@@ -11,15 +11,16 @@
 <main class="shell">
   <header class="topbar">
     <a class="brand" href="/">ChatStory</a>
-    <nav class="nav"><a class="active" href="/chat-wrapped">Chat Wrapped</a><a href="/api/chat-wrapped/pdf/{{ job_id }}">Export PDF</a></nav>
+    <nav class="nav"><a class="active" href="/chat-wrapped">Chat Wrapped</a><a href="/share/wrapped/{{ job_id }}">Story Card</a><a href="/unlock/chat-wrapped/{{ job_id }}">Unlock</a><a href="/api/chat-wrapped/pdf/{{ job_id }}">Export PDF</a></nav>
   </header>
 
   <section class="hero">
-    <div class="eyebrow">Wrapped dashboard</div>
-    <h1>Your chat in numbers.</h1>
+    <div class="eyebrow">Wrapped story</div>
+    <h1>Your relationship has a shape.</h1>
     <p class="lead" id="range">Loading processed analytics...</p>
   </section>
 
+  <section class="card paywall" id="paywall" style="display:none;margin-bottom:16px"></section>
   <section class="grid-3" id="stats"></section>
   <section class="grid-2" style="margin-top:16px">
     <div class="card"><div class="eyebrow">Heatmap</div><h2>Active hours</h2><div class="heatmap" id="heatmap" style="margin-top:16px"></div></div>
@@ -35,25 +36,28 @@ const jobId = "{{ job_id }}";
 fetch(`/api/chat-wrapped/result/${jobId}`).then(r => {
   if (!r.ok) throw new Error('Wrapped result is not ready');
   return r.json();
-}).then(render).catch(err => {
+}).then(payload => render(payload.locked ? payload.preview : payload.data, payload.locked)).catch(err => {
   document.getElementById('error-box').innerHTML = `<div class="error">${err.message}</div>`;
 });
 
-function render(data) {
-  document.getElementById('range').textContent = `${fmtDate(data.first_message_at)} to ${fmtDate(data.last_message_at)} · ${data.detected_format}`;
+function render(data, locked) {
+  if (locked) {
+    renderLocked(data);
+  } else {
+    document.getElementById('range').textContent = `${fmtDate(data.first_message_at)} to ${fmtDate(data.last_message_at)} · ${data.detected_format}`;
+  }
   document.getElementById('stats').innerHTML = [
     ['Messages', data.total_messages],
     ['Active days', data.active_days],
-    ['Media', data.media_count],
-    ['Longest session', `${data.longest_conversation_session.messages} msgs`],
-    ['Night chats', data.night_owl.total_messages],
-    ['Starter', data.conversation_starters.top_sender || 'Unknown'],
+    ['Persona', data.persona?.name || 'Locked'],
+    ['Locked details', locked ? 'Hidden' : data.media_count],
+    ['Teasers', (data.teasers || []).length],
+    ['Unlock', locked ? '₹50' : 'Done'],
   ].map(([label, value]) => `<div class="stat"><div class="num">${format(value)}</div><div class="label">${label}</div></div>`).join('');
 
+  if (locked) return;
   document.getElementById('tone').textContent = `${data.emotional_insights.tone} tone`;
-  document.getElementById('emotion').textContent = data.emotional_insights.top_supporter
-    ? `${data.emotional_insights.top_supporter} shows up often in positive/supportive moments.`
-    : 'No strong support pattern was detected.';
+  document.getElementById('emotion').textContent = data.emotional_insights.why;
   document.getElementById('starters').innerHTML = Object.entries(data.conversation_starters.counts || {})
     .map(([k, v]) => `<span class="chip">${k}: ${v}</span>`).join('');
   document.getElementById('emojis').innerHTML = (data.emoji_frequency || []).slice(0, 12)
@@ -61,6 +65,13 @@ function render(data) {
   document.getElementById('words').innerHTML = (data.shared_vocabulary || []).slice(0, 18)
     .map(w => `<span class="chip">${w.word} · ${w.count}</span>`).join('') || '<span class="muted">No shared vocabulary crossed the threshold.</span>';
   renderHeatmap(data.heatmap?.hour_totals || {});
+}
+
+function renderLocked(data) {
+  document.getElementById('range').textContent = `${data.total_messages.toLocaleString()} messages · ${data.active_days} active days · persona preview unlocked`;
+  document.getElementById('paywall').style.display = 'block';
+  document.getElementById('paywall').innerHTML = `<div class="eyebrow">Curiosity preview</div><h2>${data.persona?.name || 'A hidden persona'}</h2><p class="muted">${data.persona?.why || 'Unlock to see the full emotional map.'}</p><div class="chip-row">${(data.teasers || []).map(t => `<span class="chip">${t}</span>`).join('')}</div><a class="btn primary" style="margin-top:16px" href="/unlock/chat-wrapped/${jobId}">Unlock full Wrapped · ₹50</a>`;
+  document.querySelectorAll('.grid-2 .card').forEach(card => card.classList.add('locked'));
 }
 
 function renderHeatmap(hours) {

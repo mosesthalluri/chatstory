@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unlock · ChatStory</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main class="shell">
+  <header class="topbar"><a class="brand" href="/">ChatStory</a><nav class="nav"><a href="/{{ product_slug }}">Back</a></nav></header>
+  <section class="hero">
+    <div class="eyebrow">Manual Paytm unlock</div>
+    <h1>Unlock the full export.</h1>
+    <p class="lead">Pay via Paytm/UPI, submit the transaction ID, and an admin will verify it from the dashboard.</p>
+  </section>
+  <section class="grid-2">
+    <form class="card form" method="post" action="/unlock/{{ product_slug }}/{{ job_id }}">
+      <h2>Email and export</h2>
+      <input name="email" type="email" placeholder="Delivery email" value="{{ payment.email if payment else '' }}" required>
+      <select name="export_type">
+        <option value="single">Single export · ₹{{ single_price }}</option>
+        <option value="combined" {% if payment and payment.export_type == "combined" %}selected{% endif %}>Combined export · ₹{{ combined_price }}</option>
+      </select>
+      <button class="btn primary" type="submit">Create Paytm request</button>
+    </form>
+    <div class="card paywall">
+      <div class="eyebrow">Paytm details</div>
+      {% if payment %}
+        <h2>Pay ₹{{ payment.amount }}</h2>
+        <p class="muted">UPI ID: <strong>{{ paytm_upi_id }}</strong><br>Reference/job ID: <strong>{{ job_id }}</strong></p>
+        <img class="qr" src="{{ paytm_qr_image }}" alt="Paytm QR">
+        <form class="form" method="post" action="/api/payments/{{ job_id }}/submit" enctype="multipart/form-data">
+          <input name="transaction_id" placeholder="Paytm transaction ID / UTR" required>
+          <input name="screenshot" type="file" accept="image/*">
+          <button class="btn primary" type="submit">Submit for verification</button>
+        </form>
+        <p class="muted">Current status: {{ payment.status }}</p>
+      {% else %}
+        <h2>Create request first</h2>
+        <p class="muted">We collect email before unlock so exports and future reminders can be delivered cleanly.</p>
+      {% endif %}
+    </div>
+  </section>
+</main>
+</body>
+</html>

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ mode|title }} · ChatStory</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main class="shell">
+  <header class="topbar"><a class="brand" href="/">ChatStory</a><nav class="nav"><a href="/">Home</a></nav></header>
+  <section class="grid-2">
+    <div class="hero">
+      <div class="eyebrow">Account</div>
+      <h1>{% if mode == "signup" %}Create your vault.{% else %}Welcome back.{% endif %}</h1>
+      <p class="lead">Use one email for unlocks, admin access, and delivery links.</p>
+    </div>
+    <form class="card form" method="post" action="/{{ mode }}">
+      <h2>{{ mode|title }}</h2>
+      <input name="email" type="email" placeholder="Email" required>
+      <input name="password" type="password" placeholder="Password" required minlength="6">
+      {% if error %}<div class="error">{{ error }}</div>{% endif %}
+      <button class="btn primary" type="submit">{{ mode|title }}</button>
+      <a class="muted" href="/forgot-password">Forgot password?</a>
+      <a class="muted" href="{% if mode == 'signup' %}/login{% else %}/signup{% endif %}">
+        {% if mode == "signup" %}Already have an account? Login{% else %}New here? Sign up{% endif %}
+      </a>
+    </form>
+  </section>
+</main>
+</body>
+</html>

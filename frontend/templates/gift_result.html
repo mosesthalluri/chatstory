@@ -11,7 +11,7 @@
 <main class="shell">
   <header class="topbar">
     <a class="brand" href="/">ChatStory</a>
-    <nav class="nav"><a class="active" href="/gift-engine">Gift Engine</a><a href="/">Home</a></nav>
+    <nav class="nav"><a class="active" href="/gift-engine">Gift Engine</a><a href="/share/gift-engine/{{ job_id }}">Story Card</a><a href="/unlock/gift-engine/{{ job_id }}">Unlock</a><a href="/">Home</a></nav>
   </header>
 
   <section class="hero">
@@ -20,6 +20,7 @@
     <p class="lead" id="summary">Loading recommendations...</p>
   </section>
 
+  <section class="card paywall" id="paywall" style="display:none;margin-bottom:16px"></section>
   <section class="grid-3" id="signal-cards"></section>
   <section class="grid-2" style="margin-top:16px" id="suggestions"></section>
   <div id="error-box"></div>
@@ -40,11 +41,12 @@ const sections = [
 fetch(`/api/gift-engine/result/${jobId}`).then(r => {
   if (!r.ok) throw new Error('Gift result is not ready');
   return r.json();
-}).then(render).catch(err => {
+}).then(payload => render(payload.locked ? payload.preview : payload.data, payload.locked)).catch(err => {
   document.getElementById('error-box').innerHTML = `<div class="error">${err.message}</div>`;
 });
 
-function render(data) {
+function render(data, locked) {
+  if (locked) return renderLocked(data);
   const active = Object.entries(data.signals || {}).filter(([, s]) => s.score > 0);
   document.getElementById('summary').textContent = active.length
     ? `${active.length} signal groups detected across ${data.detected_format} messages.`
@@ -60,9 +62,18 @@ function render(data) {
   document.getElementById('suggestions').innerHTML = sections.map(([key, title]) => {
     const ideas = (data.suggestions && data.suggestions[key]) || [];
     return `<div class="card"><div class="eyebrow">${title}</div><h2>${ideas.length ? ideas[0].category.replace('_', ' ') : 'No match yet'}</h2>
-      <div class="steps">${ideas.map(idea => `<div class="step done"><span><strong>${idea.title}</strong><br><span class="muted">${idea.reason}</span></span><span>${label(idea.budget)}</span></div>`).join('') || '<p class="muted">No recommendation crossed the rule threshold.</p>'}</div>
+      <div class="steps">${ideas.map(idea => `<div class="step done"><span><strong>${idea.title}</strong><br><span class="muted">${idea.reason}</span><br><span class="muted">“${idea.quote || 'Supporting quote unlocks when available.'}”</span></span><span>${label(idea.budget)}</span></div>`).join('') || '<p class="muted">No recommendation crossed the rule threshold.</p>'}</div>
     </div>`;
   }).join('');
+}
+
+function renderLocked(data) {
+  const active = Object.entries(data.signals || {});
+  document.getElementById('summary').textContent = `${active.length} signal groups found. Specific gifts and quotes are locked.`;
+  document.getElementById('paywall').style.display = 'block';
+  document.getElementById('paywall').innerHTML = `<div class="eyebrow">Curiosity preview</div><h2>${data.locked_cards || 0} gift cards are waiting</h2><p class="muted">Unlock to see why each gift was suggested and the exact chat quote supporting it.</p><div class="chip-row">${(data.teasers || []).map(t => `<span class="chip">${t}</span>`).join('')}</div><a class="btn primary" style="margin-top:16px" href="/unlock/gift-engine/${jobId}">Unlock Gift Engine · ₹50</a>`;
+  document.getElementById('signal-cards').innerHTML = active.map(([name, signal]) => `<div class="stat"><div class="num">${signal.score}</div><div class="label">${name}</div><div class="chip-row">${(signal.top_keywords || []).map(([k]) => `<span class="chip">${k}</span>`).join('')}</div></div>`).join('');
+  document.getElementById('suggestions').innerHTML = `<div class="card locked"><h2>Locked gift cards</h2><p class="muted">Premium recommendations include Indian-market ideas, emotional context, and supporting quotes.</p></div>`;
 }
 
 function label(value) {

@@ -64,7 +64,13 @@ class Settings(BaseSettings):
     CHAPTERS_PER_BOOK: int = 8
     PREVIEW_CHAPTERS: int = 1
     CURRENCY_SYMBOL: str = "₹"
-    FULL_BOOK_PRICE: int = 399
+    FULL_BOOK_PRICE: int = 50
+    SINGLE_EXPORT_PRICE: int = 50
+    COMBINED_EXPORT_PRICE: int = 75
+    PAYTM_UPI_ID: str = "your-paytm-upi@paytm"
+    PAYTM_QR_IMAGE: str = "/static/paytm-qr.png"
+    ADMIN_EMAIL: str = ""
+    ADMIN_PASSWORD: str = ""
 
     # Storage
     AUTO_DELETE_AFTER_HOURS: int = 24

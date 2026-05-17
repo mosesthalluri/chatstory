@@ -28,6 +28,12 @@ STARTER_GAP_SECONDS = 6 * 60 * 60
 NIGHT_HOURS = {0, 1, 2, 3, 4, 5}
 POSITIVE_WORDS = {"love", "happy", "proud", "excited", "grateful", "thanks", "miss", "fun", "cute", "best"}
 STRESS_WORDS = {"stress", "stressed", "tired", "anxious", "sad", "angry", "deadline", "exam", "overwhelmed", "sorry"}
+EXTRA_STOPWORDS = set("""
+what with why who whom whose where there here from into onto about after before
+because thing things something anything everything today tomorrow yesterday
+actually literally maybe probably already still even ever never always
+""".split())
+GENERIC_PHRASES = {"good morning", "good night", "love you", "miss you", "thank you", "how are"}
 
 _templates = Environment(
     loader=FileSystemLoader(str(TEMPLATES_DIR)),
@@ -39,7 +45,7 @@ def _words(text: str) -> list[str]:
     text = emoji_lib.replace_emoji(text.lower(), replace=" ")
     return [
         word for word in re.findall(r"[a-z][a-z']{2,}", text)
-        if word not in STOPWORDS
+        if word not in STOPWORDS and word not in EXTRA_STOPWORDS
     ]
 
 
@@ -89,6 +95,35 @@ def _shared_vocabulary(messages: list[Message]) -> list[dict[str, Any]]:
     return sorted(shared, key=lambda item: item["count"], reverse=True)[:50]
 
 
+def _inside_jokes(messages: list[Message]) -> list[dict[str, Any]]:
+    phrases = Counter()
+    examples: dict[str, str] = {}
+    for msg in messages:
+        tokens = _words(msg.text) if msg.kind == MessageKind.TEXT else []
+        for n in (2, 3):
+            for parts in zip(*(tokens[i:] for i in range(n))):
+                phrase = " ".join(parts)
+                if phrase not in GENERIC_PHRASES:
+                    phrases[phrase] += 1
+                    examples.setdefault(phrase, msg.text[:140])
+    return [
+        {"phrase": phrase, "count": count, "quote": examples.get(phrase, "")}
+        for phrase, count in phrases.most_common(8)
+        if count >= 2
+    ]
+
+
+def _nicknames(messages: list[Message], senders: list[str]) -> list[dict[str, Any]]:
+    names = {s.lower().split()[0] for s in senders if s}
+    found = Counter()
+    for msg in messages:
+        text = msg.text.lower()
+        for word in re.findall(r"\b[a-z]{3,14}\b", text):
+            if word.endswith(("u", "y", "ie")) and word not in names and word not in STOPWORDS:
+                found[word] += 1
+    return [{"name": name, "count": count} for name, count in found.most_common(8) if count >= 2]
+
+
 def _emotional_insights(messages: list[Message]) -> dict[str, Any]:
     monthly = defaultdict(lambda: {"positive": 0, "stress": 0, "messages": 0})
     support = Counter()
@@ -111,7 +146,27 @@ def _emotional_insights(messages: list[Message]) -> dict[str, Any]:
         "timeline": timeline,
         "top_supporter": top_supporter,
         "tone": "warm" if sum(x["positive"] for x in timeline) >= sum(x["stress"] for x in timeline) else "high-stress",
+        "why": (
+            "Your conversations are filled with reassurance, check-ins, and positive words."
+            if sum(x["positive"] for x in timeline) >= sum(x["stress"] for x in timeline)
+            else "Stress words and apology/pressure signals appear more often than reassurance signals."
+        ),
     }
+
+
+def _persona(messages: list[Message], emotion: dict[str, Any]) -> dict[str, str]:
+    night_ratio = sum(1 for m in messages if m.timestamp.hour in NIGHT_HOURS) / max(len(messages), 1)
+    emoji_total = sum(len(_emojis(m.text)) for m in messages if m.kind == MessageKind.TEXT)
+    vocab = Counter(word for m in messages for word in (_words(m.text) if m.kind == MessageKind.TEXT else []))
+    if night_ratio > 0.22:
+        return {"name": "The Night Owls", "why": "A meaningful slice of your chat happens after midnight, when conversations tend to get slower and more honest."}
+    if emotion["tone"] == "warm":
+        return {"name": "The Comfort Pair", "why": "Reassurance, affection, and check-ins show up enough to make support one of your strongest patterns."}
+    if emoji_total > len(messages) * 0.45:
+        return {"name": "The Chaos Duo", "why": "Your messages carry high visual energy through emojis, reactions, and short expressive bursts."}
+    if any(w in vocab for w in ("think", "life", "feel", "why", "maybe")):
+        return {"name": "The Philosophers", "why": "Your vocabulary leans toward reflection, feelings, and open-ended conversation."}
+    return {"name": "The Meme Ministers", "why": "Your bond is carried by recurring phrases, quick replies, and shared conversational rituals."}
 
 
 def compute_wrapped(
@@ -149,6 +204,8 @@ def compute_wrapped(
             starter_counts[cur.sender] += 1
 
     top_starter = starter_counts.most_common(1)[0] if starter_counts else ("", 0)
+    emotion = _emotional_insights(messages)
+    jokes = _inside_jokes(messages)
     return {
         "detected_format": detected_format,
         "senders": senders,
@@ -163,6 +220,9 @@ def compute_wrapped(
         "longest_conversation_session": _longest_session(messages),
         "emoji_frequency": [{"emoji": e, "count": c} for e, c in emoji_counts.most_common(25)],
         "shared_vocabulary": _shared_vocabulary(messages),
+        "inside_jokes": jokes,
+        "nicknames": _nicknames(messages, senders),
+        "persona": _persona(messages, emotion),
         "night_owl": {
             "hours": sorted(NIGHT_HOURS),
             "total_messages": sum(night_counts.values()),
@@ -175,7 +235,12 @@ def compute_wrapped(
             "top_sender": top_starter[0],
             "top_count": top_starter[1],
         },
-        "emotional_insights": _emotional_insights(messages),
+        "emotional_insights": emotion,
+        "teasers": [
+            f"We found {len(jokes)} recurring phrases that may be inside jokes.",
+            f"{top_starter[0] or 'Someone'} restarts the conversation most often after long silences.",
+            "One part of the day carries a different emotional texture in your chat.",
+        ],
         "heatmap": {
             "by_day_hour": {day: dict(hours) for day, hours in heatmap.items()},
             "hour_totals": dict(hour_counts),

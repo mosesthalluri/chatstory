@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Share Card · ChatStory</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main class="shell">
+  <header class="topbar"><a class="brand" href="/">ChatStory</a><nav class="nav"><a href="/">Home</a></nav></header>
+  <section class="story-card card">
+    <div class="eyebrow">{% if kind == "wrapped" %}Chat Wrapped{% else %}Gift Engine{% endif %}</div>
+    {% if kind == "wrapped" %}
+      {% set data = payload.data if not payload.locked else payload.preview %}
+      <h1>{{ data.persona.name if data.persona else "A private chat persona" }}</h1>
+      <p>{{ data.persona.why if data.persona else "Unlock to reveal the emotional pattern." }}</p>
+    {% else %}
+      {% set data = payload.data if not payload.locked else payload.preview %}
+      <h1>{{ data.locked_cards if payload.locked else "Personal" }} gift ideas</h1>
+      <p>Built from real chat signals, not generic lists.</p>
+    {% endif %}
+    <div class="chip-row"><span class="chip">Instagram story size</span><span class="chip">WhatsApp-ready</span></div>
+  </section>
+</main>
+</body>
+</html>

@@ -16,13 +16,15 @@
       <a href="/chat-wrapped">Chat Wrapped</a>
       <a href="/gift-engine">Gift Engine</a>
       <a href="/chatstory-coming-soon">ChatStory</a>
+      {% if user and user.role == "admin" %}<a href="/admin">Admin</a>{% endif %}
+      {% if user %}<a href="/logout">Logout</a>{% else %}<a href="/login">Login</a>{% endif %}
     </nav>
   </header>
 
   <section class="hero">
     <div class="eyebrow">Private chat intelligence</div>
     <h1>Your conversations, processed with care.</h1>
-    <p class="lead">Choose a product, upload your export, and get a focused dashboard built from parser-first analytics.</p>
+    <p class="lead">Choose a product, upload your export, get an emotional teaser, then unlock the full export via Paytm. Single ₹{{ single_price }} · Combined ₹{{ combined_price }}.</p>
   </section>
 
   <section class="grid-3" aria-label="ChatStory products">

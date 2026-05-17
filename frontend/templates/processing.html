@@ -42,10 +42,10 @@ const jobId = "{{ job_id }}";
 const apiStatus = "{{ product.api_status }}/" + jobId;
 const resultUrl = "{{ product.result_path }}/" + jobId;
 const states = {
-  queued: 'Queued for analysis',
-  parsing: 'Parsing your export',
-  analyzing: 'Finding the patterns',
-  rendering: 'Rendering the finish',
+  queued: 'Preparing your memory reel',
+  parsing: 'Reading your conversations',
+  analyzing: 'Finding your shared patterns',
+  rendering: 'Building your cinematic export',
   done: 'Dashboard ready',
   error: 'Processing stopped'
 };
@@ -65,11 +65,20 @@ async function poll() {
 function render(s) {
   const progress = s.progress || 0;
   document.getElementById('title').textContent = states[s.state] || s.state;
-  document.getElementById('message').textContent = s.message || '';
+  document.getElementById('message').textContent = emotionalMessage(s.state, s.message);
   document.getElementById('bar').style.width = progress + '%';
   document.getElementById('pct').textContent = progress + '%';
   renderSteps(s.phases || fallbackSteps(s.state));
   renderPreview(s);
+}
+
+function emotionalMessage(state, fallback) {
+  return ({
+    parsing: 'Cleaning the export and preserving only the signals that matter.',
+    analyzing: 'Detecting late-night moments, recurring rituals, and emotional fingerprints.',
+    rendering: 'Turning the strongest patterns into something worth opening.',
+    done: 'Your teaser is ready. Premium details unlock after verification.'
+  })[state] || fallback || '';
 }
 
 function fallbackSteps(state) {
