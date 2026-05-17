@@ -29,6 +29,8 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .pipeline.orchestrator import run_pipeline, retry_render
 from .services import jobs
+from .services.chat_wrapped import run_chat_wrapped_pipeline
+from .services.gift_engine import run_gift_engine_pipeline
 from .settings import (
     UPLOADS_DIR, OUTPUT_DIR, STATIC_DIR, TEMPLATES_DIR, STORAGE_ROOT,
     settings, BACKEND_ROOT,
@@ -49,6 +51,44 @@ ui_env = Environment(
 )
 
 
+PRODUCTS = {
+    "chat-wrapped": {
+        "title": "Chat Wrapped",
+        "kicker": "Analytics",
+        "description": "Upload a chat export to build a private wrapped dashboard and branded PDF.",
+        "api_upload": "/api/chat-wrapped/upload",
+        "api_status": "/api/chat-wrapped/status",
+        "result_path": "/wrapped",
+    },
+    "gift-engine": {
+        "title": "Meaningful Gift Engine",
+        "kicker": "Recommendations",
+        "description": "Find gift ideas from hobbies, stress, food, music, travel, routines, and support patterns.",
+        "api_upload": "/api/gift-engine/upload",
+        "api_status": "/api/gift-engine/status",
+        "result_path": "/gift-engine/results",
+    },
+}
+
+
+def _save_upload(contents: bytes, filename: str | None) -> tuple[str, Path]:
+    job_id = jobs.new_job_id()
+    job_upload_dir = UPLOADS_DIR / job_id
+    job_upload_dir.mkdir(parents=True, exist_ok=True)
+    upload_path = job_upload_dir / Path(filename or "chat").name
+    upload_path.write_bytes(contents)
+    jobs.create(job_id)
+    return job_id, upload_path
+
+
+async def _read_upload(file: UploadFile) -> bytes:
+    contents = await file.read()
+    size_mb = len(contents) / (1024 * 1024)
+    if size_mb > settings.MAX_UPLOAD_SIZE_MB:
+        raise HTTPException(413, f"File too large ({size_mb:.1f}MB). Max is {settings.MAX_UPLOAD_SIZE_MB}MB.")
+    return contents
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     template = ui_env.get_template("upload.html")
@@ -57,6 +97,51 @@ async def index():
         currency=settings.CURRENCY_SYMBOL,
         price=settings.FULL_BOOK_PRICE,
     )
+
+
+@app.get("/chat-wrapped", response_class=HTMLResponse)
+async def chat_wrapped_page():
+    template = ui_env.get_template("product_upload.html")
+    return template.render(product=PRODUCTS["chat-wrapped"], max_size_mb=settings.MAX_UPLOAD_SIZE_MB)
+
+
+@app.get("/gift-engine", response_class=HTMLResponse)
+async def gift_engine_page():
+    template = ui_env.get_template("product_upload.html")
+    return template.render(product=PRODUCTS["gift-engine"], max_size_mb=settings.MAX_UPLOAD_SIZE_MB)
+
+
+@app.get("/chatstory-coming-soon", response_class=HTMLResponse)
+async def chatstory_coming_soon():
+    template = ui_env.get_template("coming_soon.html")
+    return template.render()
+
+
+@app.get("/processing/{product_slug}/{job_id}", response_class=HTMLResponse)
+async def product_processing(product_slug: str, job_id: str):
+    product = PRODUCTS.get(product_slug)
+    if product is None or jobs.load(job_id) is None:
+        raise HTTPException(404, "Job not found")
+    template = ui_env.get_template("processing.html")
+    return template.render(product=product, product_slug=product_slug, job_id=job_id)
+
+
+@app.get("/wrapped/{job_id}", response_class=HTMLResponse)
+async def wrapped_dashboard(job_id: str):
+    s = jobs.load(job_id)
+    if s is None:
+        raise HTTPException(404, "Job not found")
+    template = ui_env.get_template("wrapped_result.html")
+    return template.render(job_id=job_id)
+
+
+@app.get("/gift-engine/results/{job_id}", response_class=HTMLResponse)
+async def gift_dashboard(job_id: str):
+    s = jobs.load(job_id)
+    if s is None:
+        raise HTTPException(404, "Job not found")
+    template = ui_env.get_template("gift_result.html")
+    return template.render(job_id=job_id)
 
 
 @app.get("/job/{job_id}", response_class=HTMLResponse)
@@ -98,6 +183,78 @@ async def upload(background_tasks: BackgroundTasks, file: UploadFile = File(...)
     background_tasks.add_task(run_pipeline, job_id, upload_path)
 
     return {"job_id": job_id, "status_url": f"/job/{job_id}"}
+
+
+@app.post("/api/chat-wrapped/upload")
+async def chat_wrapped_upload(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    contents = await _read_upload(file)
+    job_id, upload_path = _save_upload(contents, file.filename)
+    background_tasks.add_task(run_chat_wrapped_pipeline, job_id, upload_path)
+
+    return {
+        "job_id": job_id,
+        "status_url": f"/processing/chat-wrapped/{job_id}",
+        "result_url": f"/wrapped/{job_id}",
+    }
+
+
+@app.get("/api/chat-wrapped/status/{job_id}")
+async def chat_wrapped_status(job_id: str):
+    s = jobs.load(job_id)
+    if s is None:
+        raise HTTPException(404, "Job not found")
+    return s.to_dict()
+
+
+@app.get("/api/chat-wrapped/result/{job_id}")
+async def chat_wrapped_result(job_id: str):
+    s = jobs.load(job_id)
+    if s is None:
+        raise HTTPException(404, "Job not found")
+    if s.state != "done" or not s.stats:
+        raise HTTPException(409, "Chat Wrapped result is not ready")
+    return s.stats
+
+
+@app.get("/api/chat-wrapped/pdf/{job_id}")
+async def chat_wrapped_pdf(job_id: str):
+    s = jobs.load(job_id)
+    if s is None or not s.preview_pdf:
+        raise HTTPException(404, "PDF not ready")
+    full_path = _resolve_output_path(s.preview_pdf)
+    if full_path is None:
+        raise HTTPException(404, "PDF file missing")
+    return FileResponse(full_path, media_type="application/pdf", filename="chat_wrapped.pdf")
+
+
+@app.post("/api/gift-engine/upload")
+async def gift_engine_upload(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    contents = await _read_upload(file)
+    job_id, upload_path = _save_upload(contents, file.filename)
+    background_tasks.add_task(run_gift_engine_pipeline, job_id, upload_path)
+    return {
+        "job_id": job_id,
+        "status_url": f"/processing/gift-engine/{job_id}",
+        "result_url": f"/gift-engine/results/{job_id}",
+    }
+
+
+@app.get("/api/gift-engine/status/{job_id}")
+async def gift_engine_status(job_id: str):
+    s = jobs.load(job_id)
+    if s is None:
+        raise HTTPException(404, "Job not found")
+    return s.to_dict()
+
+
+@app.get("/api/gift-engine/result/{job_id}")
+async def gift_engine_result(job_id: str):
+    s = jobs.load(job_id)
+    if s is None:
+        raise HTTPException(404, "Job not found")
+    if s.state != "done" or not s.stats:
+        raise HTTPException(409, "Gift Engine result is not ready")
+    return s.stats
 
 
 @app.get("/api/status/{job_id}")

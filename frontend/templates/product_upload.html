@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ product.title }} · ChatStory</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main class="shell">
+  <header class="topbar">
+    <a class="brand" href="/">ChatStory</a>
+    <nav class="nav">
+      <a href="/chat-wrapped" {% if product.title == "Chat Wrapped" %}class="active"{% endif %}>Chat Wrapped</a>
+      <a href="/gift-engine" {% if product.title != "Chat Wrapped" %}class="active"{% endif %}>Gift Engine</a>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <div class="eyebrow">{{ product.kicker }}</div>
+    <h1>{{ product.title }}</h1>
+    <p class="lead">{{ product.description }}</p>
+  </section>
+
+  <section class="grid-2">
+    <label class="drop-zone card" id="drop-zone">
+      <span>
+        <strong id="drop-text">Drop your chat export here</strong><br>
+        <span class="muted">or tap to choose. WhatsApp TXT/ZIP, Instagram JSON/ZIP, Telegram JSON. Max {{ max_size_mb }}MB.</span>
+      </span>
+      <input type="file" id="file-input" accept=".txt,.json,.zip">
+    </label>
+    <aside class="card">
+      <div class="eyebrow">Pipeline</div>
+      <h2>Parser first. AI last.</h2>
+      <div class="steps">
+        <div class="step active"><span>Parse export</span><span>01</span></div>
+        <div class="step"><span>Compute signals</span><span>02</span></div>
+        <div class="step"><span>Render dashboard</span><span>03</span></div>
+      </div>
+      <div id="error-box"></div>
+    </aside>
+  </section>
+</main>
+
+<script>
+const apiUpload = "{{ product.api_upload }}";
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+const errorBox = document.getElementById('error-box');
+const dropText = document.getElementById('drop-text');
+
+['dragenter', 'dragover'].forEach(ev => dropZone.addEventListener(ev, e => {
+  e.preventDefault();
+  dropZone.classList.add('dragover');
+}));
+['dragleave', 'drop'].forEach(ev => dropZone.addEventListener(ev, e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+}));
+dropZone.addEventListener('drop', e => {
+  if (e.dataTransfer.files.length) upload(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => {
+  if (e.target.files.length) upload(e.target.files[0]);
+});
+
+async function upload(file) {
+  errorBox.innerHTML = '';
+  dropText.textContent = 'Uploading...';
+  fileInput.disabled = true;
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const resp = await fetch(apiUpload, { method: 'POST', body: formData });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.detail || 'Upload failed');
+    window.location.href = data.status_url;
+  } catch (err) {
+    errorBox.innerHTML = `<div class="error">${err.message}</div>`;
+    dropText.textContent = 'Drop your chat export here';
+    fileInput.disabled = false;
+  }
+}
+</script>
+</body>
+</html>

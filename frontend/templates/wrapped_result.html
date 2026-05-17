@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat Wrapped · ChatStory</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main class="shell">
+  <header class="topbar">
+    <a class="brand" href="/">ChatStory</a>
+    <nav class="nav"><a class="active" href="/chat-wrapped">Chat Wrapped</a><a href="/api/chat-wrapped/pdf/{{ job_id }}">Export PDF</a></nav>
+  </header>
+
+  <section class="hero">
+    <div class="eyebrow">Wrapped dashboard</div>
+    <h1>Your chat in numbers.</h1>
+    <p class="lead" id="range">Loading processed analytics...</p>
+  </section>
+
+  <section class="grid-3" id="stats"></section>
+  <section class="grid-2" style="margin-top:16px">
+    <div class="card"><div class="eyebrow">Heatmap</div><h2>Active hours</h2><div class="heatmap" id="heatmap" style="margin-top:16px"></div></div>
+    <div class="card"><div class="eyebrow">Emotional insights</div><h2 id="tone">Reading tone</h2><p class="muted" id="emotion"></p><div class="chip-row" id="starters"></div></div>
+    <div class="card"><div class="eyebrow">Emoji analytics</div><h2>Most-used emojis</h2><div class="chip-row" id="emojis"></div></div>
+    <div class="card"><div class="eyebrow">Shared vocabulary</div><h2>Words you both use</h2><div class="chip-row" id="words"></div></div>
+  </section>
+  <div id="error-box"></div>
+</main>
+
+<script>
+const jobId = "{{ job_id }}";
+fetch(`/api/chat-wrapped/result/${jobId}`).then(r => {
+  if (!r.ok) throw new Error('Wrapped result is not ready');
+  return r.json();
+}).then(render).catch(err => {
+  document.getElementById('error-box').innerHTML = `<div class="error">${err.message}</div>`;
+});
+
+function render(data) {
+  document.getElementById('range').textContent = `${fmtDate(data.first_message_at)} to ${fmtDate(data.last_message_at)} · ${data.detected_format}`;
+  document.getElementById('stats').innerHTML = [
+    ['Messages', data.total_messages],
+    ['Active days', data.active_days],
+    ['Media', data.media_count],
+    ['Longest session', `${data.longest_conversation_session.messages} msgs`],
+    ['Night chats', data.night_owl.total_messages],
+    ['Starter', data.conversation_starters.top_sender || 'Unknown'],
+  ].map(([label, value]) => `<div class="stat"><div class="num">${format(value)}</div><div class="label">${label}</div></div>`).join('');
+
+  document.getElementById('tone').textContent = `${data.emotional_insights.tone} tone`;
+  document.getElementById('emotion').textContent = data.emotional_insights.top_supporter
+    ? `${data.emotional_insights.top_supporter} shows up often in positive/supportive moments.`
+    : 'No strong support pattern was detected.';
+  document.getElementById('starters').innerHTML = Object.entries(data.conversation_starters.counts || {})
+    .map(([k, v]) => `<span class="chip">${k}: ${v}</span>`).join('');
+  document.getElementById('emojis').innerHTML = (data.emoji_frequency || []).slice(0, 12)
+    .map(e => `<span class="chip">${e.emoji} ${e.count}</span>`).join('') || '<span class="muted">No emojis detected.</span>';
+  document.getElementById('words').innerHTML = (data.shared_vocabulary || []).slice(0, 18)
+    .map(w => `<span class="chip">${w.word} · ${w.count}</span>`).join('') || '<span class="muted">No shared vocabulary crossed the threshold.</span>';
+  renderHeatmap(data.heatmap?.hour_totals || {});
+}
+
+function renderHeatmap(hours) {
+  const max = Math.max(1, ...Object.values(hours));
+  document.getElementById('heatmap').innerHTML = Array.from({length: 24}, (_, i) => {
+    const count = hours[i] || hours[String(i)] || 0;
+    const alpha = 0.08 + (count / max) * 0.82;
+    return `<div class="cell" title="${i}:00 · ${count}" style="background:rgba(229,9,20,${alpha})"></div>`;
+  }).join('');
+}
+function fmtDate(iso) { return iso ? new Date(iso).toLocaleDateString() : ''; }
+function format(value) { return typeof value === 'number' ? value.toLocaleString() : value; }
+</script>
+</body>
+</html>

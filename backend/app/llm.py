@@ -10,6 +10,7 @@ construction code never has to know which one is in use.
 """
 
 import asyncio
+import random
 from typing import Literal
 
 import httpx
@@ -21,13 +22,20 @@ class LLMError(Exception):
     pass
 
 
+_groq_semaphore = asyncio.Semaphore(2)
+
+
 async def _groq_complete(
     messages: list[dict],
     model: str,
     temperature: float = 0.3,
     max_tokens: int = 2048,
 ) -> str:
-    """Call Groq's OpenAI-compatible endpoint."""
+    """Call Groq's OpenAI-compatible endpoint.
+    
+    Rate limiting: Uses a semaphore to limit concurrent requests to 2,
+    plus exponential backoff with jitter on 429 responses.
+    """
     if not settings.GROQ_API_KEY:
         raise LLMError("GROQ_API_KEY is not set in .env")
 
@@ -43,25 +51,31 @@ async def _groq_complete(
         "max_tokens": max_tokens,
     }
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        for attempt in range(3):
-            try:
-                resp = await client.post(url, headers=headers, json=body)
-                if resp.status_code == 429:
-                    # Rate limited — back off
-                    await asyncio.sleep(5 * (attempt + 1))
-                    continue
-                resp.raise_for_status()
-                data = resp.json()
-                return data["choices"][0]["message"]["content"]
-            except httpx.HTTPStatusError as e:
-                if attempt == 2:
-                    raise LLMError(f"Groq API error: {e.response.status_code} {e.response.text[:200]}")
-                await asyncio.sleep(2 ** attempt)
-            except (httpx.RequestError, KeyError) as e:
-                if attempt == 2:
-                    raise LLMError(f"Groq request failed: {e}")
-                await asyncio.sleep(2 ** attempt)
+    async with _groq_semaphore:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            for attempt in range(5):
+                try:
+                    resp = await client.post(url, headers=headers, json=body)
+                    if resp.status_code == 429:
+                        # Rate limited — aggressive exponential backoff with jitter
+                        # (20s, 40s, 80s, 160s, 320s) + random ±25%
+                        base_sleep = 20 * (2 ** attempt)
+                        jitter = base_sleep * random.uniform(-0.25, 0.25)
+                        sleep_time = base_sleep + jitter
+                        print(f"[llm] Groq rate limited, backing off {sleep_time:.1f}s (attempt {attempt + 1}/5)")
+                        await asyncio.sleep(sleep_time)
+                        continue
+                    resp.raise_for_status()
+                    data = resp.json()
+                    return data["choices"][0]["message"]["content"]
+                except httpx.HTTPStatusError as e:
+                    if attempt == 4:
+                        raise LLMError(f"Groq API error: {e.response.status_code} {e.response.text[:200]}")
+                    await asyncio.sleep(2 ** attempt)
+                except (httpx.RequestError, KeyError) as e:
+                    if attempt == 4:
+                        raise LLMError(f"Groq request failed: {e}")
+                    await asyncio.sleep(2 ** attempt)
 
     raise LLMError("Groq completion failed after retries")
 

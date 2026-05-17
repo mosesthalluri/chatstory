@@ -2,241 +2,49 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<meta name="theme-color" content="#FAF6F0">
-<title>ChatBook · Turn your chats into a book</title>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital@0;1&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: 'Inter', system-ui, sans-serif;
-    background: #FAF6F0;
-    color: #2C3E50;
-    min-height: 100vh;
-    -webkit-font-smoothing: antialiased;
-  }
-  .container {
-    max-width: 480px;
-    margin: 0 auto;
-    padding: 32px 20px;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-  }
-  .brand {
-    font-family: 'Cormorant Garamond', serif;
-    font-style: italic;
-    font-size: 36px;
-    text-align: center;
-    color: #2C3E50;
-    margin-bottom: 8px;
-  }
-  .tagline {
-    text-align: center;
-    color: #7B9EA8;
-    font-style: italic;
-    font-size: 15px;
-    margin-bottom: 36px;
-    font-family: 'Cormorant Garamond', serif;
-  }
-
-  .drop-zone {
-    border: 2px dashed #E8A87C;
-    border-radius: 16px;
-    padding: 40px 20px;
-    text-align: center;
-    background: white;
-    cursor: pointer;
-    transition: all 0.15s;
-    margin-bottom: 24px;
-  }
-  .drop-zone:hover, .drop-zone.dragover {
-    background: #FFF8F0;
-    border-color: #D49060;
-  }
-  .drop-icon {
-    font-size: 48px;
-    margin-bottom: 12px;
-    color: #E8A87C;
-  }
-  .drop-text {
-    font-weight: 600;
-    color: #2C3E50;
-    margin-bottom: 6px;
-    font-size: 16px;
-  }
-  .drop-sub {
-    color: #888;
-    font-size: 13px;
-    line-height: 1.5;
-  }
-  .drop-zone input[type=file] { display: none; }
-
-  .formats {
-    background: white;
-    border-radius: 12px;
-    padding: 16px 20px;
-    margin-bottom: 16px;
-    font-size: 13px;
-    color: #555;
-  }
-  .formats-title {
-    font-weight: 600;
-    color: #2C3E50;
-    margin-bottom: 8px;
-  }
-  .formats ul { list-style: none; padding-left: 0; }
-  .formats li {
-    padding: 3px 0;
-    padding-left: 16px;
-    position: relative;
-  }
-  .formats li::before {
-    content: '✓';
-    position: absolute;
-    left: 0;
-    color: #5BAA7C;
-    font-weight: 700;
-  }
-
-  .preview-info {
-    background: #FFF8F0;
-    border: 1px solid #F5D5C0;
-    border-radius: 12px;
-    padding: 14px 18px;
-    font-size: 13px;
-    color: #6B4F30;
-    margin-bottom: 24px;
-    line-height: 1.5;
-  }
-  .preview-info strong { color: #993C1D; }
-
-  .privacy {
-    text-align: center;
-    font-size: 11px;
-    color: #999;
-    margin-top: auto;
-    padding-top: 24px;
-    line-height: 1.5;
-  }
-
-  .error {
-    background: #FEE;
-    color: #A00;
-    padding: 12px 16px;
-    border-radius: 8px;
-    margin-bottom: 16px;
-    font-size: 14px;
-  }
-
-  .uploading {
-    text-align: center;
-    color: #7B9EA8;
-    padding: 20px;
-  }
-  .spinner {
-    display: inline-block;
-    width: 24px;
-    height: 24px;
-    border: 3px solid #F5D5C0;
-    border-top-color: #E8A87C;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-</style>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#09090d">
+<title>ChatStory</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-<div class="container">
-  <div class="brand">ChatBook</div>
-  <div class="tagline">Turn your chat history into an illustrated storybook</div>
+<main class="shell">
+  <header class="topbar">
+    <a class="brand" href="/">ChatStory</a>
+    <nav class="nav">
+      <a href="/chat-wrapped">Chat Wrapped</a>
+      <a href="/gift-engine">Gift Engine</a>
+      <a href="/chatstory-coming-soon">ChatStory</a>
+    </nav>
+  </header>
 
-  <div id="error-box"></div>
+  <section class="hero">
+    <div class="eyebrow">Private chat intelligence</div>
+    <h1>Your conversations, processed with care.</h1>
+    <p class="lead">Choose a product, upload your export, and get a focused dashboard built from parser-first analytics.</p>
+  </section>
 
-  <div class="drop-zone" id="drop-zone">
-    <div class="drop-icon">📂</div>
-    <div class="drop-text">Tap to choose a chat file</div>
-    <div class="drop-sub">or drag and drop here<br/>(up to {{ max_size_mb }}MB)</div>
-    <input type="file" id="file-input" accept=".txt,.json,.zip" />
-  </div>
-
-  <div class="formats">
-    <div class="formats-title">Supported formats</div>
-    <ul>
-      <li>WhatsApp .txt or .zip export</li>
-      <li>Instagram JSON or .zip export</li>
-      <li>Telegram JSON export</li>
-      <li>Plain text with "Name: message" lines</li>
-    </ul>
-  </div>
-
-  <div class="preview-info">
-    Free <strong>preview</strong> shows your stats + first chapter.<br/>
-    Full book ({{ currency }}{{ price }}) unlocks all chapters.
-  </div>
-
-  <div class="privacy">
-    Your chat is processed on this server and the raw text is deleted after 24 hours.<br/>
-    Only the final PDF is kept. Never shared, never sold.
-  </div>
-</div>
-
-<script>
-const dropZone = document.getElementById('drop-zone');
-const fileInput = document.getElementById('file-input');
-const errorBox = document.getElementById('error-box');
-
-dropZone.addEventListener('click', () => fileInput.click());
-
-['dragenter', 'dragover'].forEach(ev =>
-  dropZone.addEventListener(ev, e => {
-    e.preventDefault();
-    dropZone.classList.add('dragover');
-  })
-);
-
-['dragleave', 'drop'].forEach(ev =>
-  dropZone.addEventListener(ev, e => {
-    e.preventDefault();
-    dropZone.classList.remove('dragover');
-  })
-);
-
-dropZone.addEventListener('drop', e => {
-  if (e.dataTransfer.files.length > 0) {
-    handleFile(e.dataTransfer.files[0]);
-  }
-});
-
-fileInput.addEventListener('change', e => {
-  if (e.target.files.length > 0) {
-    handleFile(e.target.files[0]);
-  }
-});
-
-async function handleFile(file) {
-  errorBox.innerHTML = '';
-  dropZone.innerHTML = '<div class="uploading"><div class="spinner"></div><br/><br/>Uploading…</div>';
-
-  const formData = new FormData();
-  formData.append('file', file);
-
-  try {
-    const resp = await fetch('/api/upload', { method: 'POST', body: formData });
-    const data = await resp.json();
-    if (!resp.ok) {
-      throw new Error(data.detail || 'Upload failed');
-    }
-    window.location.href = data.status_url;
-  } catch (err) {
-    errorBox.innerHTML = `<div class="error">${err.message}</div>`;
-    dropZone.innerHTML = `
-      <div class="drop-icon">📂</div>
-      <div class="drop-text">Tap to choose a chat file</div>
-      <div class="drop-sub">or drag and drop here</div>
-    `;
-  }
-}
-</script>
+  <section class="grid-3" aria-label="ChatStory products">
+    <a class="tile" href="/chat-wrapped">
+      <span class="badge">Live</span>
+      <div class="eyebrow">Analytics</div>
+      <h2>Chat Wrapped</h2>
+      <p>Message stats, heatmaps, emojis, night chats, starters, vocabulary, and a branded PDF.</p>
+    </a>
+    <a class="tile gift" href="/gift-engine">
+      <span class="badge">Live</span>
+      <div class="eyebrow">Recommendations</div>
+      <h2>Meaningful Gift Engine</h2>
+      <p>Rule-based gift ideas from hobbies, routines, support patterns, food, travel, music, and stress.</p>
+    </a>
+    <a class="tile soon" href="/chatstory-coming-soon">
+      <span class="badge">Soon</span>
+      <div class="eyebrow">Narrative</div>
+      <h2>ChatStory</h2>
+      <p>A future story mode for keepsake narratives. The product is intentionally parked for now.</p>
+    </a>
+  </section>
+</main>
 </body>
 </html>

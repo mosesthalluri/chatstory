@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+@page { size: A5; margin: 0; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Inter, Arial, sans-serif; color: #f7f7fa; background: #09090d; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.page { width: 148mm; height: 210mm; padding: 16mm; page-break-after: always; background: radial-gradient(circle at 15% 10%, rgba(229,9,20,.28), transparent 30%), linear-gradient(135deg,#09090d,#12121a 55%,#050507); overflow: hidden; }
+.page:last-child { page-break-after: auto; }
+.brand { color: #e50914; font-size: 16pt; font-weight: 800; margin-bottom: 22mm; }
+.eyebrow { color: #ffb4b8; font-size: 8pt; text-transform: uppercase; letter-spacing: .12em; font-weight: 800; margin-bottom: 4mm; }
+h1 { font-size: 38pt; line-height: .96; margin: 0 0 6mm; }
+h2 { font-size: 22pt; margin: 0 0 5mm; }
+p { color: #c9cbd6; line-height: 1.55; font-size: 10.5pt; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin-top: 8mm; }
+.stat { padding: 6mm; border: 1px solid rgba(255,255,255,.14); border-radius: 3mm; background: rgba(255,255,255,.07); }
+.num { font-size: 25pt; font-weight: 800; line-height: 1; }
+.label { color: #878b9a; font-size: 7pt; text-transform: uppercase; letter-spacing: .1em; margin-top: 2mm; font-weight: 800; }
+.chip { display: inline-block; margin: 0 2mm 2mm 0; padding: 2.5mm 3mm; border-radius: 20mm; background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.12); font-size: 9pt; }
+</style>
+</head>
+<body>
+<section class="page">
+  <div class="brand">ChatStory</div>
+  <div class="eyebrow">Chat Wrapped</div>
+  <h1>Your chat in numbers.</h1>
+  <p>{{ stats.first_message_at[:10] }} to {{ stats.last_message_at[:10] }} · {{ stats.detected_format }}</p>
+  <div class="grid">
+    <div class="stat"><div class="num">{{ "{:,}".format(stats.total_messages) }}</div><div class="label">Messages</div></div>
+    <div class="stat"><div class="num">{{ stats.active_days }}</div><div class="label">Active days</div></div>
+    <div class="stat"><div class="num">{{ stats.media_count }}</div><div class="label">Media</div></div>
+    <div class="stat"><div class="num">{{ stats.night_owl.total_messages }}</div><div class="label">Night chats</div></div>
+  </div>
+</section>
+
+<section class="page">
+  <div class="eyebrow">Signals</div>
+  <h2>Conversation texture</h2>
+  <p>Longest session: {{ stats.longest_conversation_session.messages }} messages led by {{ stats.longest_conversation_session.top_sender }}.</p>
+  <p>Most frequent starter: {{ stats.conversation_starters.top_sender }} with {{ stats.conversation_starters.top_count }} restarts after long pauses.</p>
+  <p>Overall tone: {{ stats.emotional_insights.tone }}{% if stats.emotional_insights.top_supporter %}; strongest support signal from {{ stats.emotional_insights.top_supporter }}{% endif %}.</p>
+  <div style="margin-top:7mm">
+    {% for item in stats.emoji_frequency[:14] %}<span class="chip">{{ item.emoji }} {{ item.count }}</span>{% endfor %}
+  </div>
+  <div style="margin-top:6mm">
+    {% for item in stats.shared_vocabulary[:16] %}<span class="chip">{{ item.word }} · {{ item.count }}</span>{% endfor %}
+  </div>
+</section>
+</body>
+</html>

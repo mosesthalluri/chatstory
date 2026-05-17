@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Processing · {{ product.title }}</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main class="shell">
+  <header class="topbar">
+    <a class="brand" href="/">ChatStory</a>
+    <nav class="nav"><a href="/{{ product_slug }}" class="active">{{ product.title }}</a></nav>
+  </header>
+
+  <section class="hero">
+    <div class="eyebrow">Processing</div>
+    <h1 id="title">Reading the signal.</h1>
+    <p class="lead" id="message">Your export is moving through the parser-first pipeline.</p>
+  </section>
+
+  <section class="grid-2">
+    <div class="card">
+      <div class="label">Progress</div>
+      <div class="progress" style="margin:18px 0 10px"><span id="bar"></span></div>
+      <div class="muted" id="pct">0%</div>
+      <div class="steps" id="steps"></div>
+    </div>
+    <div class="card">
+      <div class="eyebrow">Insight preview</div>
+      <h2 id="preview-title">Preparing analysis</h2>
+      <p class="muted" id="preview-copy">The dashboard will unlock as soon as processing finishes.</p>
+      <div id="actions" class="chip-row"></div>
+      <div id="error-box"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const jobId = "{{ job_id }}";
+const apiStatus = "{{ product.api_status }}/" + jobId;
+const resultUrl = "{{ product.result_path }}/" + jobId;
+const states = {
+  queued: 'Queued for analysis',
+  parsing: 'Parsing your export',
+  analyzing: 'Finding the patterns',
+  rendering: 'Rendering the finish',
+  done: 'Dashboard ready',
+  error: 'Processing stopped'
+};
+let timer = null;
+
+async function poll() {
+  try {
+    const resp = await fetch(apiStatus);
+    const data = await resp.json();
+    render(data);
+    if (data.state === 'done' || data.state === 'error') clearInterval(timer);
+  } catch (err) {
+    document.getElementById('error-box').innerHTML = `<div class="error">${err.message}</div>`;
+  }
+}
+
+function render(s) {
+  const progress = s.progress || 0;
+  document.getElementById('title').textContent = states[s.state] || s.state;
+  document.getElementById('message').textContent = s.message || '';
+  document.getElementById('bar').style.width = progress + '%';
+  document.getElementById('pct').textContent = progress + '%';
+  renderSteps(s.phases || fallbackSteps(s.state));
+  renderPreview(s);
+}
+
+function fallbackSteps(state) {
+  const names = ['Parse export', 'Compute signals', 'Render result'];
+  const done = state === 'done' ? 3 : state === 'rendering' ? 2 : state === 'analyzing' ? 1 : 0;
+  return names.map((name, i) => ({ name, status: i < done ? 'done' : i === done ? 'in_progress' : 'pending' }));
+}
+
+function renderSteps(steps) {
+  document.getElementById('steps').innerHTML = steps.map(step =>
+    `<div class="step ${step.status === 'in_progress' ? 'active' : step.status}">
+      <span>${step.name}</span><span>${step.status === 'done' ? 'Done' : step.status === 'in_progress' ? 'Now' : 'Next'}</span>
+    </div>`
+  ).join('');
+}
+
+function renderPreview(s) {
+  if (s.state === 'done') {
+    document.getElementById('preview-title').textContent = 'Your result is ready';
+    document.getElementById('preview-copy').textContent = 'Open the dashboard to explore the real processed data.';
+    document.getElementById('actions').innerHTML = `<a class="btn primary" href="${resultUrl}">Open dashboard</a>`;
+  } else if (s.state === 'error') {
+    document.getElementById('preview-title').textContent = 'We could not finish this export';
+    document.getElementById('preview-copy').textContent = s.error || 'Try another export or a smaller date range.';
+    document.getElementById('error-box').innerHTML = `<div class="error">${s.error || 'Unknown error'}</div>`;
+  } else if (s.stats) {
+    document.getElementById('preview-title').textContent = `${(s.stats.total_messages || 0).toLocaleString()} messages detected`;
+    document.getElementById('preview-copy').textContent = 'The dashboard is being assembled with the signals found so far.';
+  }
+}
+
+poll();
+timer = setInterval(poll, 1800);
+</script>
+</body>
+</html>
