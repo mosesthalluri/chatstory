@@ -77,6 +77,10 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_MB: int = 200
     MAX_MESSAGES: int = 300_000
 
+    # Queue (local hardware: keep concurrent pipelines low)
+    QUEUE_MAX_CONCURRENT: int = 1
+    QUEUE_JOB_TIMEOUT_SECONDS: int = 7200
+
     # App
     SECRET_KEY: str = "change-me"
     DEBUG: bool = True

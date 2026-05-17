@@ -17,7 +17,7 @@
       <a href="/gift-engine">Gift Engine</a>
       <a href="/chatstory-coming-soon">ChatStory</a>
       {% if user and user.role == "admin" %}<a href="/admin">Admin</a>{% endif %}
-      {% if user %}<a href="/logout">Logout</a>{% else %}<a href="/login">Login</a>{% endif %}
+      {% if user %}<a href="/dashboard">Dashboard</a><a href="/logout">Logout</a>{% else %}<a href="/login">Login</a>{% endif %}
     </nav>
   </header>
 

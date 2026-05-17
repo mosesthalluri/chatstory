@@ -122,7 +122,7 @@ async def run_pipeline(job_id: str, upload_path: Path) -> None:
         phases[3]["status"] = "in_progress"
 
         # 7. Chapter generation (with two-pass system)
-        jobs.update(job_id, state="writing", progress=78, message="Writing chapters…", phases=phases)
+        jobs.update(job_id, state="generating_story", progress=78, message="Writing chapters…", phases=phases)
         # CHAPTERS_PER_BOOK=0 means "auto" — pick based on chat length.
         # Any positive value forces that exact count.
         if settings.CHAPTERS_PER_BOOK and settings.CHAPTERS_PER_BOOK > 0:
@@ -220,7 +220,7 @@ async def run_pipeline(job_id: str, upload_path: Path) -> None:
     except Exception as e:
         tb = traceback.format_exc()
         jobs.update(
-            job_id, state="error",
+            job_id, state="failed",
             error=f"{type(e).__name__}: {e}",
             message="Something went wrong — see error",
         )
@@ -322,7 +322,7 @@ async def retry_render(job_id: str) -> bool:
     except Exception as e:
         tb = traceback.format_exc()
         jobs.update(
-            job_id, state="error",
+            job_id, state="failed",
             error=f"{type(e).__name__}: {e}",
             message="Retry failed — see error",
         )

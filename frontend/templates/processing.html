@@ -39,14 +39,21 @@
 
 <script>
 const jobId = "{{ job_id }}";
+const productSlug = "{{ product_slug }}";
 const apiStatus = "{{ product.api_status }}/" + jobId;
 const resultUrl = "{{ product.result_path }}/" + jobId;
+const unlockUrl = `/unlock/${productSlug}/${jobId}`;
 const states = {
-  queued: 'Preparing your memory reel',
+  queued: 'Waiting in queue',
+  processing: 'Starting your export',
   parsing: 'Reading your conversations',
   analyzing: 'Finding your shared patterns',
+  generating_wrapped: 'Crafting your wrapped story',
+  generating_gifts: 'Finding meaningful gifts',
+  generating_story: 'Writing your narrative',
   rendering: 'Building your cinematic export',
   done: 'Dashboard ready',
+  failed: 'Processing stopped',
   error: 'Processing stopped'
 };
 let timer = null;
@@ -56,7 +63,7 @@ async function poll() {
     const resp = await fetch(apiStatus);
     const data = await resp.json();
     render(data);
-    if (data.state === 'done' || data.state === 'error') clearInterval(timer);
+    if (data.state === 'done' || data.state === 'failed' || data.state === 'error') clearInterval(timer);
   } catch (err) {
     document.getElementById('error-box').innerHTML = `<div class="error">${err.message}</div>`;
   }
@@ -98,9 +105,14 @@ function renderSteps(steps) {
 function renderPreview(s) {
   if (s.state === 'done') {
     document.getElementById('preview-title').textContent = 'Your result is ready';
-    document.getElementById('preview-copy').textContent = 'Open the dashboard to explore the real processed data.';
-    document.getElementById('actions').innerHTML = `<a class="btn primary" href="${resultUrl}">Open dashboard</a>`;
-  } else if (s.state === 'error') {
+    if (s.unlocked && s.download_links && s.download_links.pdf) {
+      document.getElementById('preview-copy').textContent = 'Payment verified — download your PDF or open the full view.';
+      document.getElementById('actions').innerHTML = `<a class="btn primary" href="${s.download_links.pdf}">Download PDF</a><a class="btn secondary" href="${resultUrl}">Open view</a>`;
+    } else {
+      document.getElementById('preview-copy').textContent = 'Teaser is live. Unlock via Paytm, wait for admin verification, then download from the unlock page or dashboard.';
+      document.getElementById('actions').innerHTML = `<a class="btn primary" href="${resultUrl}">Open teaser</a><a class="btn secondary" href="${unlockUrl}">Unlock & download</a>`;
+    }
+  } else if (s.state === 'failed' || s.state === 'error') {
     document.getElementById('preview-title').textContent = 'We could not finish this export';
     document.getElementById('preview-copy').textContent = s.error || 'Try another export or a smaller date range.';
     document.getElementById('error-box').innerHTML = `<div class="error">${s.error || 'Unknown error'}</div>`;

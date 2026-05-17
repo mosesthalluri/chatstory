@@ -60,8 +60,13 @@ function render(s) {
   ).join('');
   if (s.state === 'done') {
     document.getElementById('result-title').textContent = 'Export complete';
-    document.getElementById('result-copy').textContent = 'Open the preview or unlock the full PDF.';
-    document.getElementById('actions').innerHTML = `<a class="btn secondary" href="/preview/${jobId}">Open preview</a><button class="btn primary" onclick="pay()">Unlock ${currency}${price}</button>`;
+    if (s.unlocked) {
+      document.getElementById('result-copy').textContent = 'Download your full storybook PDF.';
+      document.getElementById('actions').innerHTML = `<a class="btn primary" href="/download/chatstory/${jobId}/full">Download full PDF</a><a class="btn secondary" href="/preview/${jobId}">Preview</a>`;
+    } else {
+      document.getElementById('result-copy').textContent = 'Preview is free. Unlock for the full PDF after Paytm verification.';
+      document.getElementById('actions').innerHTML = `<a class="btn secondary" href="/preview/${jobId}">Open preview</a><a class="btn primary" href="/unlock/chat-wrapped/${jobId}">Unlock full book</a>`;
+    }
   }
   if (s.state === 'error') {
     document.getElementById('error-box').innerHTML = `<div class="error">${s.error || 'Unknown error'}</div>`;

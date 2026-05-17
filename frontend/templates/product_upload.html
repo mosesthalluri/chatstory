@@ -15,7 +15,7 @@
       <a href="/chat-wrapped" {% if product.title == "Chat Wrapped" %}class="active"{% endif %}>Chat Wrapped</a>
       <a href="/gift-engine" {% if product.title != "Chat Wrapped" %}class="active"{% endif %}>Gift Engine</a>
       {% if user and user.role == "admin" %}<a href="/admin">Admin</a>{% endif %}
-      {% if user %}<a href="/logout">Logout</a>{% else %}<a href="/login">Login</a>{% endif %}
+      {% if user %}<a href="/dashboard">Dashboard</a><a href="/logout">Logout</a>{% else %}<a href="/login">Login</a>{% endif %}
     </nav>
   </header>
 

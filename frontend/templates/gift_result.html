@@ -11,7 +11,7 @@
 <main class="shell">
   <header class="topbar">
     <a class="brand" href="/">ChatStory</a>
-    <nav class="nav"><a class="active" href="/gift-engine">Gift Engine</a><a href="/share/gift-engine/{{ job_id }}">Story Card</a><a href="/unlock/gift-engine/{{ job_id }}">Unlock</a><a href="/">Home</a></nav>
+    <nav class="nav"><a class="active" href="/gift-engine">Gift Engine</a><a href="/dashboard">Dashboard</a><a href="/share/gift-engine/{{ job_id }}">Story Card</a>{% if not unlocked %}<a href="/unlock/gift-engine/{{ job_id }}">Unlock</a>{% else %}<a href="{{ download_links.pdf }}">Download PDF</a>{% endif %}</nav>
   </header>
 
   <section class="hero">
@@ -20,6 +20,15 @@
     <p class="lead" id="summary">Loading recommendations...</p>
   </section>
 
+  {% if unlocked %}
+  <section class="card" style="margin-bottom:16px">
+    <div class="eyebrow">Unlocked export</div>
+    <h2>Download your gift guide</h2>
+    <p class="muted">PDF includes personalized WHY lines and supporting quotes from your chat.</p>
+    <a class="btn primary" style="margin-top:12px" href="{{ download_links.pdf }}">Download PDF</a>
+    <a class="btn secondary" style="margin-top:12px;margin-left:8px" href="{{ download_links.json }}">Download JSON</a>
+  </section>
+  {% endif %}
   <section class="card paywall" id="paywall" style="display:none;margin-bottom:16px"></section>
   <section class="grid-3" id="signal-cards"></section>
   <section class="grid-2" style="margin-top:16px" id="suggestions"></section>

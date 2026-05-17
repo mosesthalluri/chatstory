@@ -73,11 +73,14 @@ class ParsedChat:
 class JobStatus:
     """Status of a book-generation job. Persisted to disk as JSON."""
     job_id: str
-    state: str  # "queued", "parsing", "analyzing", "writing", "rendering", "done", "error"
+    state: str  # queued, processing, parsing, analyzing, writing, rendering,
+                 # generating_wrapped, generating_gifts, generating_story, done, failed
     progress: int  # 0-100
     message: str  # human-readable status
     created_at: datetime
     updated_at: datetime
+    user_email: Optional[str] = None
+    product: Optional[str] = None  # chat-wrapped, gift-engine, chatstory
     error: Optional[str] = None
     preview_pdf: Optional[str] = None
     full_pdf: Optional[str] = None

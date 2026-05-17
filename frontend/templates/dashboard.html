@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your exports · ChatStory</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main class="shell">
+  <header class="topbar">
+    <a class="brand" href="/">ChatStory</a>
+    <nav class="nav">
+      <a href="/chat-wrapped">Chat Wrapped</a>
+      <a href="/gift-engine">Gift Engine</a>
+      <a href="/dashboard" class="active">Dashboard</a>
+      {% if user.role == "admin" %}<a href="/admin">Admin</a>{% endif %}
+      <a href="/logout">Logout</a>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <div class="eyebrow">Your library · {{ user.email }}</div>
+    <h1>Exports & processing</h1>
+    <p class="lead">Every upload you start while logged in appears here with queue position, unlock status, and download links.</p>
+  </section>
+
+  <section class="card" style="margin-bottom:16px">
+    <div class="grid-3">
+      <a class="tile" href="/chat-wrapped"><h2>New Wrapped</h2><p>Analytics + PDF</p></a>
+      <a class="tile gift" href="/gift-engine"><h2>New Gifts</h2><p>Meaningful ideas</p></a>
+      {% if user.role == "admin" %}
+      <a class="tile soon" href="/chatstory-coming-soon"><h2>ChatStory</h2><p>Story book (beta)</p></a>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Your jobs</h2>
+    {% if not jobs %}
+    <p class="muted" style="margin-top:12px">No exports yet. Upload while logged in to track them here.</p>
+    {% else %}
+    <table class="table" style="margin-top:12px">
+      <tr>
+        <th>Product</th>
+        <th>Status</th>
+        <th>Progress</th>
+        <th>Unlock</th>
+        <th>Payment</th>
+        <th>Updated</th>
+        <th>Actions</th>
+      </tr>
+      {% for j in jobs %}
+      <tr>
+        <td>{{ j.product or "chatstory" }}</td>
+        <td><span class="chip">{{ j.state }}</span></td>
+        <td>{{ j.progress }}%</td>
+        <td>{{ "Unlocked" if j.unlocked else "Locked" }}</td>
+        <td>{{ (j.payment.status if j.payment else "—") }}</td>
+        <td>{{ j.updated_at[:16].replace("T", " ") }}</td>
+        <td>
+          {% if j.state == "done" and j.unlocked and j.download_links.pdf %}
+          <a href="{{ j.download_links.pdf }}">PDF</a> ·
+          {% elif j.state == "done" and not j.unlocked %}
+          <a href="{{ j.download_links.unlock }}">Unlock</a> ·
+          {% endif %}
+          {% if j.state == "done" %}
+          <a href="{{ j.result_url }}">Open</a>
+          {% elif j.product in ("chat-wrapped", "gift-engine") and j.state not in ("done", "failed") %}
+          <a href="/processing/{{ j.product }}/{{ j.job_id }}">Track</a>
+          {% elif j.product == "chatstory" or not j.product %}
+          <a href="/job/{{ j.job_id }}">Track</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+  </section>
+</main>
+</body>
+</html>

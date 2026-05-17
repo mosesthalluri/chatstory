@@ -8,13 +8,32 @@
 </head>
 <body>
 <main class="shell">
-  <header class="topbar"><a class="brand" href="/">ChatStory</a><nav class="nav"><a href="/{{ product_slug }}">Back</a></nav></header>
+  <header class="topbar"><a class="brand" href="/">ChatStory</a><nav class="nav"><a href="/{{ product_slug }}">Back</a><a href="/dashboard">Dashboard</a></nav></header>
   <section class="hero">
     <div class="eyebrow">Manual Paytm unlock</div>
-    <h1>Unlock the full export.</h1>
-    <p class="lead">Pay via Paytm/UPI, submit the transaction ID, and an admin will verify it from the dashboard.</p>
+    <h1>{% if unlocked %}Export unlocked{% else %}Unlock the full export{% endif %}</h1>
+    <p class="lead">{% if unlocked %}Download your PDF below or open the full interactive view.{% else %}Pay via Paytm/UPI, submit the transaction ID, and an admin will verify it.{% endif %}</p>
   </section>
+
+  {% if unlocked %}
+  <section class="card" style="margin-bottom:16px">
+    <h2>Download your files</h2>
+    <p class="muted">After admin verification, downloads stay available from this page and your dashboard.</p>
+    <div class="chip-row" style="margin-top:16px">
+      {% if download_links.pdf %}
+      <a class="btn primary" href="{{ download_links.pdf }}">Download PDF</a>
+      {% endif %}
+      {% if download_links.json %}
+      <a class="btn secondary" href="{{ download_links.json }}">Download JSON</a>
+      {% endif %}
+      <a class="btn secondary" href="{{ download_links.view }}">Open full view</a>
+      <a class="btn secondary" href="/download/{{ product_slug }}/{{ job_id }}">Download hub</a>
+    </div>
+  </section>
+  {% endif %}
+
   <section class="grid-2">
+    {% if not unlocked %}
     <form class="card form" method="post" action="/unlock/{{ product_slug }}/{{ job_id }}">
       <h2>Email and export</h2>
       <input name="email" type="email" placeholder="Delivery email" value="{{ payment.email if payment else '' }}" required>
@@ -24,9 +43,15 @@
       </select>
       <button class="btn primary" type="submit">Create Paytm request</button>
     </form>
+    {% else %}
+    <div class="card">
+      <h2>Already unlocked</h2>
+      <p class="muted">If a download fails, try again from <a href="/dashboard">your dashboard</a> or contact support with job ID <code>{{ job_id }}</code>.</p>
+    </div>
+    {% endif %}
     <div class="card paywall">
       <div class="eyebrow">Paytm details</div>
-      {% if payment %}
+      {% if payment and not unlocked %}
         <h2>Pay ₹{{ payment.amount }}</h2>
         <p class="muted">UPI ID: <strong>{{ paytm_upi_id }}</strong><br>Reference/job ID: <strong>{{ job_id }}</strong></p>
         <img class="qr" src="{{ paytm_qr_image }}" alt="Paytm QR">
@@ -35,10 +60,17 @@
           <input name="screenshot" type="file" accept="image/*">
           <button class="btn primary" type="submit">Submit for verification</button>
         </form>
-        <p class="muted">Current status: {{ payment.status }}</p>
+        <p class="muted">Status: <strong>{{ payment.status }}</strong>
+          {% if payment.status == 'submitted' %} — waiting for admin approval. Refresh after verification.{% endif %}
+          {% if payment.status == 'verified' %} — approved. If downloads do not appear, refresh this page.{% endif %}
+        </p>
+      {% elif payment and payment.status == 'verified' and not unlocked %}
+        <p class="muted">Payment verified — syncing unlock… refresh the page.</p>
+      {% elif payment %}
+        <p class="muted">Payment status: {{ payment.status }}</p>
       {% else %}
         <h2>Create request first</h2>
-        <p class="muted">We collect email before unlock so exports and future reminders can be delivered cleanly.</p>
+        <p class="muted">We collect email before unlock so exports can be tied to your account.</p>
       {% endif %}
     </div>
   </section>

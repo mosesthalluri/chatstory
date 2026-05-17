@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Download · {{ product.title }}</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main class="shell">
+  <header class="topbar"><a class="brand" href="/">ChatStory</a><nav class="nav"><a href="/dashboard">Dashboard</a><a href="{{ download_links.view }}">View online</a></nav></header>
+  <section class="hero">
+    <div class="eyebrow">Unlocked</div>
+    <h1>Your export is ready to download.</h1>
+    <p class="lead">Payment verified. Use the buttons below — the PDF opens as a file download in your browser.</p>
+  </section>
+  <section class="card">
+    <div class="chip-row" style="margin-bottom:16px">
+      {% if download_links.pdf %}
+      <a class="btn primary" href="{{ download_links.pdf }}">Download PDF</a>
+      {% endif %}
+      {% if download_links.json %}
+      <a class="btn secondary" href="{{ download_links.json }}">Download JSON</a>
+      {% endif %}
+      {% if download_links.full_pdf %}
+      <a class="btn primary" href="{{ download_links.full_pdf }}">Download full book PDF</a>
+      {% endif %}
+      {% if download_links.preview_pdf %}
+      <a class="btn secondary" href="{{ download_links.preview_pdf }}">Download preview PDF</a>
+      {% endif %}
+      <a class="btn secondary" href="{{ download_links.view }}">Open interactive view</a>
+    </div>
+    <p class="muted">Job ID: <code>{{ job_id }}</code>{% if payment %} · Payment: {{ payment.status }}{% endif %}</p>
+  </section>
+</main>
+</body>
+</html>

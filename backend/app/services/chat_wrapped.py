@@ -154,6 +154,132 @@ def _emotional_insights(messages: list[Message]) -> dict[str, Any]:
     }
 
 
+def _emotional_clock(messages: list[Message]) -> dict[str, Any]:
+    """Hour-of-day mood buckets from vocabulary signals."""
+    buckets = {
+        "vulnerable_hours": Counter(),
+        "comfort_hours": Counter(),
+        "high_energy_hours": Counter(),
+        "deep_talk_hours": Counter(),
+    }
+    vuln = {"sorry", "sad", "miss", "anxious", "tired", "alone", "scared", "cry"}
+    comfort = {"tea", "chai", "coffee", "sleep", "hug", "home", "calm", "okay", "fine"}
+    energy = {"haha", "lol", "party", "let's", "yay", "excited", "dance", "game"}
+    deep = {"feel", "life", "future", "trust", "mean", "relationship", "forever", "why"}
+
+    for msg in messages:
+        if msg.kind != MessageKind.TEXT:
+            continue
+        words = set(_words(msg.text))
+        hour = msg.timestamp.hour
+        if words & vuln:
+            buckets["vulnerable_hours"][hour] += 1
+        if words & comfort:
+            buckets["comfort_hours"][hour] += 1
+        if words & energy or len(_emojis(msg.text)) >= 2:
+            buckets["high_energy_hours"][hour] += 1
+        if words & deep or len(msg.text) > 120:
+            buckets["deep_talk_hours"][hour] += 1
+
+    def _top_label(counter: Counter) -> dict[str, Any]:
+        if not counter:
+            return {"hour": None, "label": "subtle", "why": "No strong hourly pattern crossed the threshold."}
+        hour, count = counter.most_common(1)[0]
+        return {
+            "hour": hour,
+            "count": count,
+            "label": f"{hour:02d}:00",
+            "why": f"This hour appeared {count} times with this emotional texture in your export.",
+        }
+
+    return {
+        "vulnerable": _top_label(buckets["vulnerable_hours"]),
+        "comfort": _top_label(buckets["comfort_hours"]),
+        "high_energy": _top_label(buckets["high_energy_hours"]),
+        "deep_conversation": _top_label(buckets["deep_talk_hours"]),
+    }
+
+
+def _relationship_arc(messages: list[Message]) -> list[dict[str, str]]:
+    if len(messages) < 20:
+        return [{"phase": "current", "title": "Your story so far", "why": "Not enough messages yet for a multi-phase arc."}]
+
+    start = messages[0].timestamp
+    end = messages[-1].timestamp
+    span = max((end - start).total_seconds(), 1)
+    quintile_msgs: list[list[Message]] = [[] for _ in range(5)]
+    for msg in messages:
+        idx = min(4, int(((msg.timestamp - start).total_seconds() / span) * 5))
+        quintile_msgs[idx].append(msg)
+
+    phase_names = ["beginning", "comfort", "chaos", "support", "current"]
+    phase_titles = [
+        "The Beginning",
+        "The Comfort Phase",
+        "The Chaos Phase",
+        "The Support Phase",
+        "Where You Are Now",
+    ]
+    arc = []
+    for i, chunk in enumerate(quintile_msgs):
+        if not chunk:
+            continue
+        text_count = sum(1 for m in chunk if m.kind == MessageKind.TEXT)
+        emoji_count = sum(len(_emojis(m.text)) for m in chunk if m.kind == MessageKind.TEXT)
+        words = set(w for m in chunk if m.kind == MessageKind.TEXT for w in _words(m.text))
+        stress = len(words & STRESS_WORDS)
+        positive = len(words & POSITIVE_WORDS)
+        if stress > positive + 2:
+            tone = "intense"
+        elif positive > stress + 2:
+            tone = "warm"
+        elif emoji_count > text_count * 0.4:
+            tone = "playful"
+        else:
+            tone = "steady"
+        arc.append({
+            "phase": phase_names[i],
+            "title": phase_titles[i],
+            "tone": tone,
+            "messages": len(chunk),
+            "why": (
+                f"In this stretch, your chat reads as {tone} — "
+                f"{text_count} text messages and recurring rituals shaped this chapter."
+            ),
+        })
+    return arc
+
+
+def _cinematic_headline(persona: dict[str, str], jokes: list[dict], emotion: dict) -> str:
+    joke_hint = jokes[0]["phrase"] if jokes else ""
+    if joke_hint:
+        return f"{persona.get('name', 'Your bond')} — carried by “{joke_hint}” and late-night honesty."
+    return f"{persona.get('name', 'Your bond')} — {emotion.get('tone', 'a private')} rhythm only you two share."
+
+
+def _build_teasers(
+    persona: dict,
+    jokes: list,
+    clock: dict,
+    arc: list,
+    top_starter: tuple,
+) -> list[str]:
+    teasers = [
+        f"Your dynamic persona: {persona.get('name', 'hidden')} — unlock to read why.",
+    ]
+    if jokes:
+        teasers.append(f"Inside joke detected: “{jokes[0]['phrase']}” appears {jokes[0]['count']} times.")
+    if clock.get("comfort", {}).get("hour") is not None:
+        teasers.append(
+            f"Comfort hour peaks around {clock['comfort']['label']} — full emotional clock is locked."
+        )
+    if arc:
+        teasers.append(f"Relationship arc: you are in “{arc[-1]['title']}” — earlier phases are blurred.")
+    if top_starter[0]:
+        teasers.append(f"{top_starter[0]} restarts the thread after long silences most often.")
+    return teasers[:5]
+
+
 def _persona(messages: list[Message], emotion: dict[str, Any]) -> dict[str, str]:
     night_ratio = sum(1 for m in messages if m.timestamp.hour in NIGHT_HOURS) / max(len(messages), 1)
     emoji_total = sum(len(_emojis(m.text)) for m in messages if m.kind == MessageKind.TEXT)
@@ -206,9 +332,14 @@ def compute_wrapped(
     top_starter = starter_counts.most_common(1)[0] if starter_counts else ("", 0)
     emotion = _emotional_insights(messages)
     jokes = _inside_jokes(messages)
+    persona = _persona(messages, emotion)
+    clock = _emotional_clock(messages)
+    arc = _relationship_arc(messages)
+    headline = _cinematic_headline(persona, jokes, emotion)
     return {
         "detected_format": detected_format,
         "senders": senders,
+        "cinematic_headline": headline,
         "total_messages": raw_message_count or len(messages),
         "conversation_turns": len(messages),
         "text_messages": len(text_messages),
@@ -222,7 +353,9 @@ def compute_wrapped(
         "shared_vocabulary": _shared_vocabulary(messages),
         "inside_jokes": jokes,
         "nicknames": _nicknames(messages, senders),
-        "persona": _persona(messages, emotion),
+        "persona": persona,
+        "emotional_clock": clock,
+        "relationship_arc": arc,
         "night_owl": {
             "hours": sorted(NIGHT_HOURS),
             "total_messages": sum(night_counts.values()),
@@ -236,11 +369,7 @@ def compute_wrapped(
             "top_count": top_starter[1],
         },
         "emotional_insights": emotion,
-        "teasers": [
-            f"We found {len(jokes)} recurring phrases that may be inside jokes.",
-            f"{top_starter[0] or 'Someone'} restarts the conversation most often after long silences.",
-            "One part of the day carries a different emotional texture in your chat.",
-        ],
+        "teasers": _build_teasers(persona, jokes, clock, arc, top_starter),
         "heatmap": {
             "by_day_hour": {day: dict(hours) for day, hours in heatmap.items()},
             "hour_totals": dict(hour_counts),
@@ -270,7 +399,7 @@ async def run_chat_wrapped_pipeline(job_id: str, upload_path: Path) -> None:
 
         phases[0] = {"name": "Parse export", "status": "done", "progress": 100}
         phases[1] = {"name": "Compute analytics", "status": "in_progress", "progress": 50}
-        jobs.update(job_id, state="analyzing", progress=45, message="Computing Chat Wrapped analytics...", phases=phases)
+        jobs.update(job_id, state="generating_wrapped", progress=45, message="Computing Chat Wrapped analytics...", phases=phases)
         wrapped = compute_wrapped(
             parsed.messages,
             parsed.detected_format,
@@ -303,7 +432,7 @@ async def run_chat_wrapped_pipeline(job_id: str, upload_path: Path) -> None:
     except Exception as exc:
         jobs.update(
             job_id,
-            state="error",
+            state="failed",
             progress=100,
             message="Chat Wrapped failed",
             error=f"{type(exc).__name__}: {exc}",

@@ -8,8 +8,17 @@
 </head>
 <body>
 <main class="shell">
-  <header class="topbar"><a class="brand" href="/">ChatStory Admin</a><nav class="nav"><a href="/chatstory-coming-soon">Beta</a><a href="/logout">Logout</a></nav></header>
-  <section class="hero"><div class="eyebrow">Control room</div><h1>Payments, exports, users.</h1></section>
+  <header class="topbar"><a class="brand" href="/">ChatStory Admin</a><nav class="nav"><a href="/chatstory-coming-soon">ChatStory beta</a><a href="/dashboard">Dashboard</a><a href="/logout">Logout</a></nav></header>
+  <section class="hero"><div class="eyebrow">Control room</div><h1>Payments, queue, exports.</h1></section>
+
+  <section class="card" style="margin-bottom:16px">
+    <h2>Worker queue</h2>
+    <p class="muted">Max concurrent: {{ queue.max_concurrent }} · Pending: {{ queue.pending_count }} · Running: {{ queue.running_count }}</p>
+    <div class="chip-row" style="margin-top:12px">
+      {% for id in queue.pending %}<span class="chip">queued {{ id[:8] }}…</span>{% endfor %}
+      {% for id in queue.running %}<span class="chip">running {{ id[:8] }}…</span>{% endfor %}
+    </div>
+  </section>
 
   <section class="card">
     <h2>Paytm verification</h2>
@@ -29,7 +38,25 @@
 
   <section class="grid-2" style="margin-top:16px">
     <div class="card"><h2>Users</h2><table class="table">{% for u in users %}<tr><td>{{ u.email }}</td><td>{{ u.role }}</td><td>{{ u.created_at[:10] }}</td></tr>{% endfor %}</table></div>
-    <div class="card"><h2>Jobs</h2><table class="table">{% for j in jobs[:20] %}<tr><td>{{ j.job_id }}</td><td>{{ j.state }}</td><td>{{ j.progress }}%</td><td>{{ "paid" if j.paid else "locked" }}</td></tr>{% endfor %}</table></div>
+    <div class="card">
+      <h2>Jobs</h2>
+      <table class="table">
+        <tr><th>Job</th><th>Product</th><th>User</th><th>State</th><th>Paid</th><th>Actions</th></tr>
+        {% for j in jobs[:30] %}
+        <tr>
+          <td><code>{{ j.job_id[:10] }}…</code></td>
+          <td>{{ j.product or "—" }}</td>
+          <td>{{ j.user_email or "anon" }}</td>
+          <td>{{ j.state }}</td>
+          <td>{{ "yes" if j.paid else "no" }}</td>
+          <td>
+            <form method="post" action="/admin/jobs/{{ j.job_id }}/retry" style="display:inline"><button class="btn secondary" type="submit">Retry</button></form>
+            <form method="post" action="/admin/jobs/{{ j.job_id }}/unlock" style="display:inline"><button class="btn secondary" type="submit">Unlock</button></form>
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
   </section>
 </main>
 </body>

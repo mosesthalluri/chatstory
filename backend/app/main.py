@@ -12,6 +12,7 @@ FastAPI application. Defines:
 
 import asyncio
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 # --- Windows asyncio fix (belt-and-suspenders) ---
@@ -22,7 +23,7 @@ from pathlib import Path
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Request, Form, Response
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Form, Response
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -31,13 +32,22 @@ from .pipeline.orchestrator import run_pipeline, retry_render
 from .services import auth, jobs, payments
 from .services.chat_wrapped import run_chat_wrapped_pipeline
 from .services.gift_engine import run_gift_engine_pipeline
+from .services.queue import job_queue
+from .services import exports as export_svc
 from .settings import (
     UPLOADS_DIR, OUTPUT_DIR, STATIC_DIR, TEMPLATES_DIR, STORAGE_ROOT,
     settings, BACKEND_ROOT,
 )
 
 
-app = FastAPI(title="ChatBook", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await job_queue.start()
+    yield
+    await job_queue.stop()
+
+
+app = FastAPI(title="ChatBook", version="0.1.0", lifespan=lifespan)
 
 # Static files (CSS, JS for the frontend UI)
 if STATIC_DIR.exists():
@@ -88,7 +98,16 @@ def _require_admin(request: Request) -> dict:
 
 
 def _has_unlock(request: Request, job_id: str) -> bool:
-    return _is_admin(request) or payments.is_unlocked(job_id)
+    if _is_admin(request):
+        return True
+    return export_svc.is_unlocked(job_id)
+
+
+def _unlock_context(request: Request, job_id: str, product_slug: str) -> dict:
+    unlocked = _has_unlock(request, job_id)
+    links = export_svc.download_links(job_id, product_slug)
+    payment = payments.for_job(job_id)
+    return {"unlocked": unlocked, "download_links": links, "payment": payment}
 
 
 def _all_jobs() -> list[dict]:
@@ -107,10 +126,18 @@ def _wrapped_preview(data: dict, unlocked: bool) -> dict:
         "locked": True,
         "preview": {
             "persona": data.get("persona", {}),
+            "cinematic_headline": data.get("cinematic_headline", ""),
             "total_messages": data.get("total_messages", 0),
             "active_days": data.get("active_days", 0),
             "teasers": data.get("teasers", []),
             "payment_status": "locked",
+            "locked_sections": [
+                "emotional_clock",
+                "relationship_arc",
+                "inside_jokes",
+                "nicknames",
+                "full heatmap",
+            ],
         },
     }
 
@@ -133,14 +160,36 @@ def _gift_preview(data: dict, unlocked: bool) -> dict:
     }
 
 
-def _save_upload(contents: bytes, filename: str | None) -> tuple[str, Path]:
+def _user_email(request: Request) -> str | None:
+    user = _current_user(request)
+    return user.get("email") if user else None
+
+
+def _require_user(request: Request) -> dict:
+    user = _current_user(request)
+    if not user:
+        raise HTTPException(401, "Login required")
+    return user
+
+
+def _save_upload(
+    contents: bytes,
+    filename: str | None,
+    *,
+    user_email: str | None,
+    product: str,
+) -> tuple[str, Path]:
     job_id = jobs.new_job_id()
     job_upload_dir = UPLOADS_DIR / job_id
     job_upload_dir.mkdir(parents=True, exist_ok=True)
     upload_path = job_upload_dir / Path(filename or "chat").name
     upload_path.write_bytes(contents)
-    jobs.create(job_id)
+    jobs.create(job_id, user_email=user_email, product=product)
     return job_id, upload_path
+
+
+async def _enqueue_pipeline(job_id: str, product: str, fn, upload_path: Path) -> None:
+    await job_queue.enqueue(job_id, product, fn, job_id, upload_path)
 
 
 async def _read_upload(file: UploadFile) -> bytes:
@@ -201,6 +250,37 @@ async def logout():
     return response
 
 
+@app.get("/dashboard", response_class=HTMLResponse)
+async def user_dashboard(request: Request):
+    user = _require_user(request)
+    user_jobs = []
+    for status in jobs.list_all(user_email=user["email"]):
+        row = status.to_dict()
+        row["result_url"] = jobs.result_url(status)
+        row["unlocked"] = _has_unlock(request, status.job_id)
+        row["payment"] = payments.for_job(status.job_id)
+        row["download_links"] = export_svc.download_links(status.job_id, status.product)
+        user_jobs.append(row)
+    return ui_env.get_template("dashboard.html").render(
+        user=user,
+        jobs=user_jobs,
+        currency=settings.CURRENCY_SYMBOL,
+    )
+
+
+@app.get("/api/me/jobs")
+async def api_my_jobs(request: Request):
+    user = _require_user(request)
+    rows = []
+    for status in jobs.list_all(user_email=user["email"]):
+        row = status.to_dict()
+        row["result_url"] = jobs.result_url(status)
+        row["unlocked"] = _has_unlock(request, status.job_id)
+        row["payment_status"] = (payments.for_job(status.job_id) or {}).get("status", "none")
+        rows.append(row)
+    return {"jobs": rows, "queue": job_queue.snapshot()}
+
+
 @app.get("/forgot-password", response_class=HTMLResponse)
 async def forgot_password():
     return ui_env.get_template("forgot_password.html").render()
@@ -240,8 +320,9 @@ async def wrapped_dashboard(request: Request, job_id: str):
     s = jobs.load(job_id)
     if s is None:
         raise HTTPException(404, "Job not found")
+    ctx = _unlock_context(request, job_id, "chat-wrapped")
     template = ui_env.get_template("wrapped_result.html")
-    return template.render(job_id=job_id, unlocked=_has_unlock(request, job_id))
+    return template.render(job_id=job_id, **ctx)
 
 
 @app.get("/gift-engine/results/{job_id}", response_class=HTMLResponse)
@@ -249,8 +330,9 @@ async def gift_dashboard(request: Request, job_id: str):
     s = jobs.load(job_id)
     if s is None:
         raise HTTPException(404, "Job not found")
+    ctx = _unlock_context(request, job_id, "gift-engine")
     template = ui_env.get_template("gift_result.html")
-    return template.render(job_id=job_id, unlocked=_has_unlock(request, job_id))
+    return template.render(job_id=job_id, **ctx)
 
 
 @app.get("/share/wrapped/{job_id}", response_class=HTMLResponse)
@@ -269,16 +351,18 @@ async def gift_share_card(request: Request, job_id: str):
     return ui_env.get_template("share_card.html").render(kind="gift", payload=_gift_preview(s.stats, _has_unlock(request, job_id)), job_id=job_id)
 
 
-@app.get("/unlock/{product_slug}/{job_id}", response_class=HTMLResponse)
-async def unlock_page(product_slug: str, job_id: str):
+def _render_unlock_page(request: Request, product_slug: str, job_id: str, payment=None):
     product = PRODUCTS.get(product_slug)
     if product is None or jobs.load(job_id) is None:
         raise HTTPException(404, "Job not found")
+    ctx = _unlock_context(request, job_id, product_slug)
     return ui_env.get_template("unlock.html").render(
         product=product,
         product_slug=product_slug,
         job_id=job_id,
-        payment=payments.for_job(job_id),
+        payment=payment or ctx["payment"],
+        unlocked=ctx["unlocked"],
+        download_links=ctx["download_links"],
         single_price=settings.SINGLE_EXPORT_PRICE,
         combined_price=settings.COMBINED_EXPORT_PRICE,
         paytm_upi_id=settings.PAYTM_UPI_ID,
@@ -286,21 +370,33 @@ async def unlock_page(product_slug: str, job_id: str):
     )
 
 
+@app.get("/unlock/{product_slug}/{job_id}", response_class=HTMLResponse)
+async def unlock_page(request: Request, product_slug: str, job_id: str):
+    return _render_unlock_page(request, product_slug, job_id)
+
+
 @app.post("/unlock/{product_slug}/{job_id}", response_class=HTMLResponse)
-async def create_unlock(product_slug: str, job_id: str, email: str = Form(...), export_type: str = Form("single")):
+async def create_unlock(request: Request, product_slug: str, job_id: str, email: str = Form(...), export_type: str = Form("single")):
     product = PRODUCTS.get(product_slug)
     if product is None or jobs.load(job_id) is None:
         raise HTTPException(404, "Job not found")
     payment = payments.create_intent(job_id, product_slug, email, export_type)
-    return ui_env.get_template("unlock.html").render(
-        product=product,
+    return _render_unlock_page(request, product_slug, job_id, payment=payment)
+
+
+@app.get("/download/{product_slug}/{job_id}", response_class=HTMLResponse)
+async def download_hub(request: Request, product_slug: str, job_id: str):
+    if PRODUCTS.get(product_slug) is None or jobs.load(job_id) is None:
+        raise HTTPException(404, "Job not found")
+    ctx = _unlock_context(request, job_id, product_slug)
+    if not ctx["unlocked"]:
+        return RedirectResponse(ctx["download_links"]["unlock"], status_code=303)
+    return ui_env.get_template("downloads.html").render(
+        product=PRODUCTS[product_slug],
         product_slug=product_slug,
         job_id=job_id,
-        payment=payment,
-        single_price=settings.SINGLE_EXPORT_PRICE,
-        combined_price=settings.COMBINED_EXPORT_PRICE,
-        paytm_upi_id=settings.PAYTM_UPI_ID,
-        paytm_qr_image=settings.PAYTM_QR_IMAGE,
+        download_links=ctx["download_links"],
+        payment=ctx["payment"],
     )
 
 
@@ -318,7 +414,51 @@ async def admin_dashboard(request: Request):
         payments=payments.all_payments(),
         users=auth.all_users(),
         jobs=_all_jobs(),
+        queue=job_queue.snapshot(),
     )
+
+
+@app.get("/api/admin/queue")
+async def admin_queue_status(request: Request):
+    _require_admin(request)
+    return job_queue.snapshot()
+
+
+@app.post("/admin/jobs/{job_id}/retry")
+async def admin_retry_job(request: Request, job_id: str):
+    _require_admin(request)
+    status = jobs.load(job_id)
+    if status is None:
+        raise HTTPException(404, "Job not found")
+    upload_path = _find_uploaded_file(job_id)
+    if upload_path is None:
+        raise HTTPException(404, "Original upload not found")
+    product = status.product or "chatstory"
+    runners = {
+        "chat-wrapped": run_chat_wrapped_pipeline,
+        "gift-engine": run_gift_engine_pipeline,
+        "chatstory": run_pipeline,
+    }
+    fn = runners.get(product, run_pipeline)
+    jobs.update(job_id, state="queued", progress=0, message="Queued for retry", error="")
+    await _enqueue_pipeline(job_id, product, fn, upload_path)
+    return RedirectResponse("/admin", status_code=303)
+
+
+@app.post("/admin/jobs/{job_id}/unlock")
+async def admin_unlock_job(request: Request, job_id: str):
+    _require_admin(request)
+    if jobs.load(job_id) is None:
+        raise HTTPException(404, "Job not found")
+    jobs.update(job_id, paid=True)
+    return RedirectResponse("/admin", status_code=303)
+
+
+@app.post("/admin/jobs/{job_id}/cancel")
+async def admin_cancel_job(request: Request, job_id: str):
+    _require_admin(request)
+    await job_queue.cancel(job_id)
+    return RedirectResponse("/admin", status_code=303)
 
 
 @app.post("/admin/payments/{payment_id}/verify")
@@ -327,6 +467,8 @@ async def admin_verify_payment(request: Request, payment_id: str, approved: str 
     record = payments.verify(payment_id, user["email"], approved == "true")
     if record["status"] == "verified":
         jobs.update(record["job_id"], paid=True)
+        product = record.get("product") or "chat-wrapped"
+        return RedirectResponse(f"/unlock/{product}/{record['job_id']}", status_code=303)
     return RedirectResponse("/admin", status_code=303)
 
 
@@ -354,39 +496,28 @@ async def job_page(job_id: str):
 
 
 @app.post("/api/upload")
-async def upload(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
-    # Size check
-    contents = await file.read()
-    size_mb = len(contents) / (1024 * 1024)
-    if size_mb > settings.MAX_UPLOAD_SIZE_MB:
-        raise HTTPException(
-            413,
-            f"File too large ({size_mb:.1f}MB). Max is {settings.MAX_UPLOAD_SIZE_MB}MB."
-        )
-
-    # Save the upload
-    job_id = jobs.new_job_id()
-    job_upload_dir = UPLOADS_DIR / job_id
-    job_upload_dir.mkdir(parents=True, exist_ok=True)
-    safe_name = Path(file.filename or "chat").name
-    upload_path = job_upload_dir / safe_name
-    upload_path.write_bytes(contents)
-
-    # Create job record
-    jobs.create(job_id)
-
-    # Kick off pipeline in background
-    background_tasks.add_task(run_pipeline, job_id, upload_path)
-
+async def upload(request: Request, file: UploadFile = File(...)):
+    contents = await _read_upload(file)
+    job_id, upload_path = _save_upload(
+        contents,
+        file.filename,
+        user_email=_user_email(request),
+        product="chatstory",
+    )
+    await _enqueue_pipeline(job_id, "chatstory", run_pipeline, upload_path)
     return {"job_id": job_id, "status_url": f"/job/{job_id}"}
 
 
 @app.post("/api/chat-wrapped/upload")
-async def chat_wrapped_upload(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+async def chat_wrapped_upload(request: Request, file: UploadFile = File(...)):
     contents = await _read_upload(file)
-    job_id, upload_path = _save_upload(contents, file.filename)
-    background_tasks.add_task(run_chat_wrapped_pipeline, job_id, upload_path)
-
+    job_id, upload_path = _save_upload(
+        contents,
+        file.filename,
+        user_email=_user_email(request),
+        product="chat-wrapped",
+    )
+    await _enqueue_pipeline(job_id, "chat-wrapped", run_chat_wrapped_pipeline, upload_path)
     return {
         "job_id": job_id,
         "status_url": f"/processing/chat-wrapped/{job_id}",
@@ -394,12 +525,20 @@ async def chat_wrapped_upload(background_tasks: BackgroundTasks, file: UploadFil
     }
 
 
-@app.get("/api/chat-wrapped/status/{job_id}")
-async def chat_wrapped_status(job_id: str):
+def _job_status_payload(request: Request, job_id: str) -> dict:
     s = jobs.load(job_id)
     if s is None:
         raise HTTPException(404, "Job not found")
-    return s.to_dict()
+    payload = s.to_dict()
+    payload["unlocked"] = _has_unlock(request, job_id)
+    payload["download_links"] = export_svc.download_links(job_id, s.product)
+    payload["payment_status"] = (payments.for_job(job_id) or {}).get("status", "none")
+    return payload
+
+
+@app.get("/api/chat-wrapped/status/{job_id}")
+async def chat_wrapped_status(request: Request, job_id: str):
+    return _job_status_payload(request, job_id)
 
 
 @app.get("/api/chat-wrapped/result/{job_id}")
@@ -412,24 +551,45 @@ async def chat_wrapped_result(request: Request, job_id: str):
     return _wrapped_preview(s.stats, _has_unlock(request, job_id))
 
 
+def _pdf_attachment(path: Path, filename: str) -> FileResponse:
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=filename,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.get("/api/chat-wrapped/pdf/{job_id}")
 async def chat_wrapped_pdf(request: Request, job_id: str):
-    s = jobs.load(job_id)
-    if s is None or not s.preview_pdf:
-        raise HTTPException(404, "PDF not ready")
     if not _has_unlock(request, job_id):
-        raise HTTPException(402, "Unlock required")
-    full_path = _resolve_output_path(s.preview_pdf)
-    if full_path is None:
+        raise HTTPException(402, "Unlock required — complete payment and wait for admin verification")
+    path = export_svc.resolve_pdf_path(job_id, "preview_pdf")
+    if path is None:
+        raise HTTPException(404, "PDF not ready yet")
+    return _pdf_attachment(path, "chat_wrapped.pdf")
+
+
+@app.get("/download/chat-wrapped/{job_id}/pdf")
+async def download_wrapped_pdf(request: Request, job_id: str):
+    if not _has_unlock(request, job_id):
+        return RedirectResponse(f"/unlock/chat-wrapped/{job_id}", status_code=303)
+    path = export_svc.resolve_pdf_path(job_id, "preview_pdf")
+    if path is None:
         raise HTTPException(404, "PDF file missing")
-    return FileResponse(full_path, media_type="application/pdf", filename="chat_wrapped.pdf")
+    return _pdf_attachment(path, "chat_wrapped.pdf")
 
 
 @app.post("/api/gift-engine/upload")
-async def gift_engine_upload(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+async def gift_engine_upload(request: Request, file: UploadFile = File(...)):
     contents = await _read_upload(file)
-    job_id, upload_path = _save_upload(contents, file.filename)
-    background_tasks.add_task(run_gift_engine_pipeline, job_id, upload_path)
+    job_id, upload_path = _save_upload(
+        contents,
+        file.filename,
+        user_email=_user_email(request),
+        product="gift-engine",
+    )
+    await _enqueue_pipeline(job_id, "gift-engine", run_gift_engine_pipeline, upload_path)
     return {
         "job_id": job_id,
         "status_url": f"/processing/gift-engine/{job_id}",
@@ -438,11 +598,49 @@ async def gift_engine_upload(background_tasks: BackgroundTasks, file: UploadFile
 
 
 @app.get("/api/gift-engine/status/{job_id}")
-async def gift_engine_status(job_id: str):
+async def gift_engine_status(request: Request, job_id: str):
+    return _job_status_payload(request, job_id)
+
+
+@app.get("/download/gift-engine/{job_id}/pdf")
+async def download_gift_pdf(request: Request, job_id: str):
+    if not _has_unlock(request, job_id):
+        return RedirectResponse(f"/unlock/gift-engine/{job_id}", status_code=303)
+    path = export_svc.resolve_pdf_path(job_id, "preview_pdf")
+    if path is None:
+        raise HTTPException(404, "Gift PDF not ready")
+    return _pdf_attachment(path, "gift_engine.pdf")
+
+
+@app.get("/download/gift-engine/{job_id}/json")
+async def download_gift_json(request: Request, job_id: str):
+    if not _has_unlock(request, job_id):
+        raise HTTPException(402, "Unlock required")
+    path = OUTPUT_DIR / job_id / "gift_engine.json"
+    if not path.exists():
+        raise HTTPException(404, "Gift data missing")
+    return FileResponse(path, media_type="application/json", filename="gift_engine.json")
+
+
+@app.get("/download/chatstory/{job_id}/preview")
+async def download_chatstory_preview(request: Request, job_id: str):
     s = jobs.load(job_id)
     if s is None:
         raise HTTPException(404, "Job not found")
-    return s.to_dict()
+    path = export_svc.resolve_pdf_path(job_id, "preview_pdf")
+    if path is None:
+        raise HTTPException(404, "Preview not ready")
+    return _pdf_attachment(path, "chatstory_preview.pdf")
+
+
+@app.get("/download/chatstory/{job_id}/full")
+async def download_chatstory_full(request: Request, job_id: str):
+    if not _has_unlock(request, job_id):
+        return RedirectResponse(f"/job/{job_id}", status_code=303)
+    path = export_svc.resolve_pdf_path(job_id, "full_pdf")
+    if path is None:
+        raise HTTPException(404, "Full PDF not ready")
+    return _pdf_attachment(path, "chatstory_full.pdf")
 
 
 @app.get("/api/gift-engine/result/{job_id}")
@@ -456,11 +654,8 @@ async def gift_engine_result(request: Request, job_id: str):
 
 
 @app.get("/api/status/{job_id}")
-async def status(job_id: str):
-    s = jobs.load(job_id)
-    if s is None:
-        raise HTTPException(404, "Job not found")
-    return s.to_dict()
+async def status(request: Request, job_id: str):
+    return _job_status_payload(request, job_id)
 
 
 def _resolve_output_path(stored_path: str) -> Path | None:
@@ -518,12 +713,12 @@ async def preview_pdf(job_id: str):
 
 
 @app.get("/full/{job_id}")
-async def full_pdf(job_id: str):
+async def full_pdf(request: Request, job_id: str):
     s = jobs.load(job_id)
     if s is None or not s.full_pdf:
         raise HTTPException(404, "Full PDF not ready")
-    if not s.paid:
-        raise HTTPException(402, "Payment required")
+    if not _has_unlock(request, job_id):
+        raise HTTPException(402, "Payment required — unlock from your dashboard or unlock page")
     full_path = _resolve_output_path(s.full_pdf)
     if full_path is None:
         canonical = OUTPUT_DIR / job_id / "full.pdf"
@@ -593,43 +788,23 @@ async def pay_stub(job_id: str):
 
 
 @app.post("/api/retry/{job_id}")
-async def retry(job_id: str, background_tasks: BackgroundTasks):
-    """Retry just the PDF render step using the saved checkpoint.
-
-    Use this when a job died in the 'rendering' state — the LLM chapters
-    and images are already done and saved to disk, so this re-runs only
-    the cheap final step. No API spending.
-    """
-    s = jobs.load(job_id)
-    if s is None:
+async def retry(job_id: str):
+    """Retry just the PDF render step using the saved checkpoint."""
+    if jobs.load(job_id) is None:
         raise HTTPException(404, "Job not found")
-
-    # Kick off retry in background, immediately return so the user can
-    # watch progress on the status page.
-    background_tasks.add_task(retry_render, job_id)
+    await job_queue.enqueue(job_id, "chatstory", retry_render, job_id)
     return {"ok": True, "status_url": f"/job/{job_id}"}
 
 
 @app.post("/api/rewrite/{job_id}")
-async def rewrite_story(job_id: str, background_tasks: BackgroundTasks):
-    """Re-run story generation for an existing upload.
-
-    This is intentionally heavier than /api/retry: it redoes the LLM story
-    pass and PDF render, but it does not require the user to upload the chat
-    again. Use it after prompt/code changes or when the normalized input looks
-    good but the generated prose needs another pass.
-    """
+async def rewrite_story(job_id: str):
+    """Re-run story generation for an existing upload."""
     s = jobs.load(job_id)
     if s is None:
         raise HTTPException(404, "Job not found")
-
     upload_path = _find_uploaded_file(job_id)
     if upload_path is None:
-        raise HTTPException(
-            404,
-            "Original upload not found for this job. Please upload again."
-        )
-
+        raise HTTPException(404, "Original upload not found for this job. Please upload again.")
     jobs.update(
         job_id,
         state="queued",
@@ -639,7 +814,7 @@ async def rewrite_story(job_id: str, background_tasks: BackgroundTasks):
         preview_pdf="",
         full_pdf="",
     )
-    background_tasks.add_task(run_pipeline, job_id, upload_path)
+    await _enqueue_pipeline(job_id, "chatstory", run_pipeline, upload_path)
     return {"ok": True, "status_url": f"/job/{job_id}"}
 
 

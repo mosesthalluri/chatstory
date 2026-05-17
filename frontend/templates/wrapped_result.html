@@ -11,7 +11,7 @@
 <main class="shell">
   <header class="topbar">
     <a class="brand" href="/">ChatStory</a>
-    <nav class="nav"><a class="active" href="/chat-wrapped">Chat Wrapped</a><a href="/share/wrapped/{{ job_id }}">Story Card</a><a href="/unlock/chat-wrapped/{{ job_id }}">Unlock</a><a href="/api/chat-wrapped/pdf/{{ job_id }}">Export PDF</a></nav>
+    <nav class="nav"><a class="active" href="/chat-wrapped">Chat Wrapped</a><a href="/dashboard">Dashboard</a><a href="/share/wrapped/{{ job_id }}">Story Card</a>{% if not unlocked %}<a href="/unlock/chat-wrapped/{{ job_id }}">Unlock</a>{% else %}<a href="{{ download_links.pdf }}">Download PDF</a>{% endif %}</nav>
   </header>
 
   <section class="hero">
@@ -20,6 +20,17 @@
     <p class="lead" id="range">Loading processed analytics...</p>
   </section>
 
+  {% if unlocked %}
+  <section class="card" style="margin-bottom:16px">
+    <div class="eyebrow">Unlocked export</div>
+    <h2>Download your Chat Wrapped PDF</h2>
+    <p class="muted">Your payment was approved. The PDF downloads to your device — it is not shown in the browser tab.</p>
+    <div class="chip-row" style="margin-top:12px">
+      <a class="btn primary" href="{{ download_links.pdf }}">Download PDF</a>
+      <a class="btn secondary" href="/download/chat-wrapped/{{ job_id }}">All download options</a>
+    </div>
+  </section>
+  {% endif %}
   <section class="card paywall" id="paywall" style="display:none;margin-bottom:16px"></section>
   <section class="grid-3" id="stats"></section>
   <section class="grid-2" style="margin-top:16px">
@@ -44,7 +55,8 @@ function render(data, locked) {
   if (locked) {
     renderLocked(data);
   } else {
-    document.getElementById('range').textContent = `${fmtDate(data.first_message_at)} to ${fmtDate(data.last_message_at)} · ${data.detected_format}`;
+    const headline = data.cinematic_headline ? `${data.cinematic_headline}` : '';
+    document.getElementById('range').textContent = headline || `${fmtDate(data.first_message_at)} to ${fmtDate(data.last_message_at)} · ${data.detected_format}`;
   }
   document.getElementById('stats').innerHTML = [
     ['Messages', data.total_messages],
@@ -65,6 +77,28 @@ function render(data, locked) {
   document.getElementById('words').innerHTML = (data.shared_vocabulary || []).slice(0, 18)
     .map(w => `<span class="chip">${w.word} · ${w.count}</span>`).join('') || '<span class="muted">No shared vocabulary crossed the threshold.</span>';
   renderHeatmap(data.heatmap?.hour_totals || {});
+  renderArc(data.relationship_arc || []);
+  renderClock(data.emotional_clock || {});
+}
+
+function renderArc(arc) {
+  if (!arc.length) return;
+  const block = document.createElement('section');
+  block.className = 'card';
+  block.style.marginTop = '16px';
+  block.innerHTML = `<div class="eyebrow">Relationship arc</div><h2>How your bond evolved</h2><div class="steps">${arc.map(p => `<div class="step done"><span><strong>${p.title}</strong><br><span class="muted">${p.why}</span></span><span>${p.tone}</span></div>`).join('')}</div>`;
+  document.querySelector('.shell').appendChild(block);
+}
+
+function renderClock(clock) {
+  const block = document.createElement('section');
+  block.className = 'grid-2';
+  block.style.marginTop = '16px';
+  block.innerHTML = ['vulnerable', 'comfort', 'high_energy', 'deep_conversation'].map(key => {
+    const slot = clock[key] || {};
+    return `<div class="card"><div class="eyebrow">${key.replace('_', ' ')}</div><h2>${slot.label || '—'}</h2><p class="muted">${slot.why || ''}</p></div>`;
+  }).join('');
+  document.querySelector('.shell').appendChild(block);
 }
 
 function renderLocked(data) {
