@@ -44,17 +44,17 @@ const apiStatus = "{{ product.api_status }}/" + jobId;
 const resultUrl = "{{ product.result_path }}/" + jobId;
 const unlockUrl = `/unlock/${productSlug}/${jobId}`;
 const states = {
-  queued: 'Waiting in queue',
-  processing: 'Starting your export',
+  queued: 'Waiting in line for your story',
+  processing: 'Warming up the narrative engine',
   parsing: 'Reading your conversations',
-  analyzing: 'Finding your shared patterns',
-  generating_wrapped: 'Crafting your wrapped story',
-  generating_gifts: 'Finding meaningful gifts',
-  generating_story: 'Writing your narrative',
-  rendering: 'Building your cinematic export',
-  done: 'Dashboard ready',
-  failed: 'Processing stopped',
-  error: 'Processing stopped'
+  analyzing: 'Finding your shared rituals',
+  generating_wrapped: 'Detecting emotional shifts',
+  generating_gifts: 'Matching gifts to real quotes',
+  generating_story: 'Writing your relationship chapters',
+  rendering: 'Designing your keepsake export',
+  done: 'Your story is ready',
+  failed: 'Something interrupted us',
+  error: 'Something interrupted us'
 };
 let timer = null;
 
@@ -81,15 +81,17 @@ function render(s) {
 
 function emotionalMessage(state, fallback) {
   return ({
-    parsing: 'Cleaning the export and preserving only the signals that matter.',
-    analyzing: 'Detecting late-night moments, recurring rituals, and emotional fingerprints.',
-    rendering: 'Turning the strongest patterns into something worth opening.',
-    done: 'Your teaser is ready. Premium details unlock after verification.'
+    parsing: 'Finding the messages that still sound like you two.',
+    analyzing: 'Tracing inside jokes, comfort rituals, and quiet reassurance.',
+    generating_wrapped: 'Building your relationship arc — chapter by chapter.',
+    generating_gifts: 'Pairing each gift idea with a message that proves it.',
+    rendering: 'Polishing a keepsake worth screenshotting.',
+    done: 'A teaser is ready — the full emotional map unlocks after payment.'
   })[state] || fallback || '';
 }
 
 function fallbackSteps(state) {
-  const names = ['Parse export', 'Compute signals', 'Render result'];
+  const names = ['Read your chat', 'Find rituals & arcs', 'Design your export'];
   const done = state === 'done' ? 3 : state === 'rendering' ? 2 : state === 'analyzing' ? 1 : 0;
   return names.map((name, i) => ({ name, status: i < done ? 'done' : i === done ? 'in_progress' : 'pending' }));
 }

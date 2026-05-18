@@ -38,13 +38,12 @@
 <script>
 const jobId = "{{ job_id }}";
 const sections = [
-  ['low_budget', 'Low budget'],
-  ['medium_budget', 'Medium budget'],
-  ['premium', 'Premium'],
+  ['inside_jokes', 'Inside jokes'],
   ['emotional_gifts', 'Emotional gifts'],
-  ['experiences', 'Experiences'],
-  ['hobby_gifts', 'Hobby gifts'],
-  ['stress_relief', 'Stress relief'],
+  ['stress_relief', 'Late-night comfort'],
+  ['low_budget', 'Low budget'],
+  ['experiences', 'Shared experiences'],
+  ['hobby_gifts', 'Hobbies & music'],
 ];
 
 fetch(`/api/gift-engine/result/${jobId}`).then(r => {

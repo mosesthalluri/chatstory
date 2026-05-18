@@ -2,29 +2,50 @@
 <html>
 <head>
 <meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
 <style>
-@page { size: A5; margin: 0; }
+@page { size: 148mm 210mm; margin: 0; }
+* { box-sizing: border-box; }
 body { margin: 0; font-family: Inter, Arial, sans-serif; color: #f7f7fa; background: #09090d; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-.page { width: 148mm; min-height: 210mm; padding: 14mm; page-break-after: always; background: linear-gradient(160deg,#09090d,#151520); }
-h1 { font-size: 28pt; margin: 0 0 4mm; }
-h2 { font-size: 14pt; margin: 8mm 0 3mm; color: #ffb4b8; }
-p, li { color: #c9cbd6; font-size: 9.5pt; line-height: 1.5; }
-.gift { margin: 4mm 0; padding: 4mm; border: 1px solid rgba(255,255,255,.12); border-radius: 2mm; background: rgba(255,255,255,.05); }
-.quote { font-style: italic; color: #9aa0b4; margin-top: 2mm; }
+.page {
+  width: 148mm; min-height: 210mm; max-height: 210mm; padding: 14mm 16mm;
+  page-break-after: always; page-break-inside: avoid; overflow: hidden;
+  background: linear-gradient(165deg, #09090d, #151520 60%, #0a0a0f);
+}
+.page:last-child { page-break-after: auto; }
+.brand { color: #e50914; font-size: 10pt; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8mm; }
+.eyebrow { color: #ffb4b8; font-size: 7pt; text-transform: uppercase; letter-spacing: .12em; font-weight: 800; margin-bottom: 2mm; }
+h1 { font-size: 26pt; margin: 0 0 4mm; font-weight: 800; line-height: 1.05; }
+h2 { font-size: 13pt; margin: 0 0 3mm; color: #fff; font-weight: 700; line-height: 1.2; }
+p { color: #c9cbd6; font-size: 9.5pt; line-height: 1.5; margin: 0 0 3mm; }
+.gift-card {
+  margin-top: 5mm; padding: 5mm 6mm;
+  border: 1px solid rgba(255,255,255,.12); border-radius: 3mm;
+  background: rgba(255,255,255,.05);
+  page-break-inside: avoid;
+}
+.why { color: #d8dae3; }
+.quote { font-style: italic; color: #9aa0b4; border-left: 2px solid #e50914; padding-left: 4mm; margin: 3mm 0; font-size: 9pt; }
+.meta { font-size: 7.5pt; color: #6d7280; text-transform: uppercase; letter-spacing: .08em; }
 </style>
 </head>
 <body>
 <section class="page">
-  <div style="color:#e50914;font-weight:800;font-size:14pt">ChatStory · Gift Engine</div>
-  <h1>Meaningful gifts from your chat</h1>
-  <p>{{ gifts.senders|join(' & ') }} · {{ gifts.detected_format }}</p>
+  <p class="brand">ChatStory · Gift Engine</p>
+  <p class="eyebrow">Evidence-matched ideas</p>
+  <h1>Gifts your chat actually supports</h1>
+  <p>{{ gifts.senders|join(' & ') }} · Each card includes a real supporting quote.</p>
 </section>
 {% for idea in picks %}
 <section class="page">
+  <p class="eyebrow">{{ idea.gift_type|replace('_',' ') }} · {{ idea.budget|replace('_',' ') }}</p>
   <h2>{{ idea.title }}</h2>
-  <p><strong>Why:</strong> {{ idea.reason }}</p>
-  {% if idea.quote %}<p class="quote">“{{ idea.quote }}” — {{ idea.quote_sender }}</p>{% endif %}
-  <p>Budget: {{ idea.budget.replace('_', ' ') }} · Type: {{ idea.gift_type }}</p>
+  <div class="gift-card">
+    <p class="why"><strong>Why:</strong> {{ idea.reason }}</p>
+    {% if idea.quote %}
+    <p class="quote">“{{ idea.quote }}”<br><span class="meta">— {{ idea.quote_sender }}</span></p>
+    {% endif %}
+  </div>
 </section>
 {% endfor %}
 </body>

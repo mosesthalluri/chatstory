@@ -68,8 +68,9 @@ function render(data, locked) {
   ].map(([label, value]) => `<div class="stat"><div class="num">${format(value)}</div><div class="label">${label}</div></div>`).join('');
 
   if (locked) return;
-  document.getElementById('tone').textContent = `${data.emotional_insights.tone} tone`;
+  document.getElementById('tone').textContent = data.emotional_insights.tone || 'How you show up for each other';
   document.getElementById('emotion').textContent = data.emotional_insights.why;
+  renderViral(data.viral_moments || {});
   document.getElementById('starters').innerHTML = Object.entries(data.conversation_starters.counts || {})
     .map(([k, v]) => `<span class="chip">${k}: ${v}</span>`).join('');
   document.getElementById('emojis').innerHTML = (data.emoji_frequency || []).slice(0, 12)
@@ -79,6 +80,16 @@ function render(data, locked) {
   renderHeatmap(data.heatmap?.hour_totals || {});
   renderArc(data.relationship_arc || []);
   renderClock(data.emotional_clock || {});
+}
+
+function renderViral(viral) {
+  if (!viral.most_human_moment) return;
+  const block = document.createElement('section');
+  block.className = 'card';
+  block.style.marginTop = '16px';
+  const m = viral.most_human_moment;
+  block.innerHTML = `<div class="eyebrow">Most human moment</div><h2>The line that sounds like you</h2><p class="muted">“${m.quote}” — ${m.sender}</p><p>${m.why}</p>${viral.movie_tagline ? `<p class="muted" style="margin-top:8px">${viral.movie_tagline}</p>` : ''}`;
+  document.querySelector('.shell').insertBefore(block, document.getElementById('stats'));
 }
 
 function renderArc(arc) {
