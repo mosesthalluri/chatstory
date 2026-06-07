@@ -51,8 +51,11 @@ class JobQueue:
         await self._queue.put(None)
         if self._dispatcher:
             await self._dispatcher
-        for task in list(self._running.values()):
+        running = list(self._running.values())
+        for task in running:
             task.cancel()
+        if running:
+            await asyncio.gather(*running, return_exceptions=True)
         self._started = False
 
     async def enqueue(
@@ -120,7 +123,17 @@ class JobQueue:
                 if current and current.state == "failed" and current.error == "Cancelled by user":
                     return
                 jobs.update(job_id, state="processing", message="Processing started…")
-                await item.fn(*item.args, **item.kwargs)
+                timeout = max(1, settings.QUEUE_JOB_TIMEOUT_SECONDS)
+                await asyncio.wait_for(
+                    item.fn(*item.args, **item.kwargs), timeout=timeout
+                )
+        except asyncio.TimeoutError:
+            jobs.update(
+                job_id,
+                state="failed",
+                message="Processing timed out",
+                error=f"Job exceeded the {settings.QUEUE_JOB_TIMEOUT_SECONDS}s time limit",
+            )
         except asyncio.CancelledError:
             jobs.update(
                 job_id,

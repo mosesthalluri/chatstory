@@ -2,6 +2,7 @@
 Chat Wrapped — relationship intelligence from parsed messages (no LLM).
 """
 
+import asyncio
 import json
 import traceback
 from collections import Counter, defaultdict
@@ -232,14 +233,15 @@ async def run_chat_wrapped_pipeline(job_id: str, upload_path: Path) -> None:
             {"name": "Render keepsake PDF", "status": "pending", "progress": 0},
         ]
         jobs.update(job_id, state="parsing", progress=10, message="Reading your conversations…", phases=phases)
-        parsed = parse_chat(upload_path)
+        parsed = await asyncio.to_thread(parse_chat, upload_path)
         if parsed.message_count > settings.MAX_MESSAGES:
             raise ValueError(f"Too many messages ({parsed.message_count}). Maximum is {settings.MAX_MESSAGES}.")
 
         phases[0] = {"name": "Parse export", "status": "done", "progress": 100}
         phases[1] = {"name": "Find rituals & arcs", "status": "in_progress", "progress": 50}
         jobs.update(job_id, state="generating_wrapped", progress=45, message="Finding inside jokes and emotional shifts…", phases=phases)
-        wrapped = compute_wrapped(
+        wrapped = await asyncio.to_thread(
+            compute_wrapped,
             parsed.messages,
             parsed.detected_format,
             parsed.senders,

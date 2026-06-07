@@ -12,17 +12,14 @@ python-dotenv==1.0.1
 pydantic==2.9.2
 pydantic-settings==2.6.0
 
-# PDF rendering
+# PDF rendering (run `playwright install chromium` once after installing)
 playwright==1.48.0
 
-# Data and analysis
-pandas==2.2.3
-numpy==2.1.2
+# Emoji parsing for the stats / wrapped engines
 emoji==2.14.0
 
-# File handling
-python-magic==0.4.27 ; sys_platform != 'win32'
-python-magic-bin==0.4.14 ; sys_platform == 'win32'
-
-# Optional: Ollama client (lightweight)
-ollama==0.3.3
+# NOTE: The LLM client (app/llm.py) talks to Groq and Ollama directly over
+# HTTP via httpx, so no SDK packages are required. pandas/numpy/python-magic
+# were previously listed but are never imported anywhere in the app — they
+# were removed to keep installs fast and avoid the python-magic-bin /
+# numpy-build failures common on Windows + Python 3.13.

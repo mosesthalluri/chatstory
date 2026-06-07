@@ -35,15 +35,53 @@ def _verify(password: str, stored: str) -> bool:
 
 def create_user(email: str, password: str) -> dict:
     email = email.strip().lower()
+    if not email or "@" not in email:
+        raise ValueError("Enter a valid email address")
+    if len(password) < 6:
+        raise ValueError("Password must be at least 6 characters")
     users = _load()
     if any(u["email"] == email for u in users):
         raise ValueError("Email already registered")
-    role = "admin" if not users else "user"
+    # Admin if this is the very first account OR the email matches the
+    # configured ADMIN_EMAIL. Otherwise a normal user.
+    configured_admin = (settings.ADMIN_EMAIL or "").strip().lower()
+    role = "admin" if (not users or email == configured_admin) else "user"
     user = {
         "id": secrets.token_urlsafe(12),
         "email": email,
         "password_hash": _hash(password),
         "role": role,
+        "created_at": datetime.now().isoformat(),
+    }
+    users.append(user)
+    _save(users)
+    return {k: v for k, v in user.items() if k != "password_hash"}
+
+
+def seed_admin() -> dict | None:
+    """Create or promote the configured admin account at startup.
+
+    If ADMIN_EMAIL/ADMIN_PASSWORD are set in .env and that user does not
+    exist yet, create it as an admin. If the user exists but isn't admin,
+    promote it. This guarantees a known admin login regardless of who
+    signed up first. No-op if the settings are blank.
+    """
+    email = (settings.ADMIN_EMAIL or "").strip().lower()
+    password = settings.ADMIN_PASSWORD or ""
+    if not email or not password:
+        return None
+    users = _load()
+    existing = next((u for u in users if u["email"] == email), None)
+    if existing:
+        if existing.get("role") != "admin":
+            existing["role"] = "admin"
+            _save(users)
+        return {k: v for k, v in existing.items() if k != "password_hash"}
+    user = {
+        "id": secrets.token_urlsafe(12),
+        "email": email,
+        "password_hash": _hash(password),
+        "role": "admin",
         "created_at": datetime.now().isoformat(),
     }
     users.append(user)

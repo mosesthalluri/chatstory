@@ -27,7 +27,7 @@ def _save(records: list[dict]) -> None:
 
 def create_intent(job_id: str, product: str, email: str, export_type: str) -> dict:
     records = _load()
-    existing = next((r for r in records if r["job_id"] == job_id and r["email"] == email.lower()), None)
+    existing = next((r for r in records if r["job_id"] == job_id and r["email"] == email.strip().lower()), None)
     if existing and existing["status"] in {"pending", "submitted", "verified"}:
         return existing
     record = {

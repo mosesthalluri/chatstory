@@ -1,3 +1,17 @@
+# Runtime data and secrets
 backend/storage/
 backend/venv/
 backend/.env
+backend/.env.local
+
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Tooling
+.claude/
+.vscode/
+.idea/
+.DS_Store

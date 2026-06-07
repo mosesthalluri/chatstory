@@ -7,6 +7,7 @@ with FastAPI's BackgroundTasks. Move to a real queue (RQ, Celery) when you
 have concurrent users.
 """
 
+import asyncio
 import json
 import traceback
 from dataclasses import asdict
@@ -14,7 +15,7 @@ from pathlib import Path
 
 from .. import models
 from ..core import build_intelligence
-from ..core.sessions import sessions_into_chapters
+from ..core.sessions import sessions_into_chapters, detect_sessions
 from ..parsers import parse_chat
 from ..pipeline import stats, chunker, chapter_gen
 from ..services import image_gen, pdf_render, jobs
@@ -58,7 +59,9 @@ async def run_pipeline(job_id: str, upload_path: Path) -> None:
         #    so the user can verify what was extracted before the LLM runs.
         from . import normalizer
         jobs.update(job_id, state="parsing", progress=5, message="Reading chat file…", phases=phases)
-        parsed = parse_chat(upload_path)
+        parsed = await asyncio.to_thread(parse_chat, upload_path)
+        if not parsed.messages:
+            raise ValueError("No messages could be read from this file.")
 
         # Persist normalized outputs immediately. Even if the rest fails,
         # the user can inspect what we parsed.
@@ -95,8 +98,8 @@ async def run_pipeline(job_id: str, upload_path: Path) -> None:
 
         # 2. Stats
         jobs.update(job_id, state="analyzing", progress=15, message="Computing stats…", phases=phases)
-        intelligence = build_intelligence(parsed.messages, parsed.senders)
-        chat_stats = stats.compute_stats(parsed)
+        intelligence = await asyncio.to_thread(build_intelligence, parsed.messages, parsed.senders)
+        chat_stats = await asyncio.to_thread(stats.compute_stats, parsed)
         chat_stats["inside_jokes"] = [
             (phrase["phrase"], phrase["count"])
             for phrase in intelligence.semantic_phrases
@@ -134,18 +137,33 @@ async def run_pipeline(job_id: str, upload_path: Path) -> None:
         jobs.update(job_id, state="generating_story", progress=78, message="Writing chapters…", phases=phases)
         # CHAPTERS_PER_BOOK=0 means "auto" — pick based on chat length.
         # Any positive value forces that exact count.
+        #
+        # select_meaningful_sessions only keeps scenes with strong emotional
+        # signal. A perfectly real but low-drama chat can yield zero selected
+        # sessions — which previously produced a single stub "Quiet Parts"
+        # chapter. Fall back to ALL detected sessions so every valid chat
+        # becomes a real, multi-chapter book.
+        chapter_sessions = intelligence.selected_sessions
+        if not chapter_sessions:
+            chapter_sessions = detect_sessions(parsed.messages)
         selected_messages = [
             message
-            for session in intelligence.selected_sessions
+            for session in chapter_sessions
             for message in session.messages
         ]
+        if not selected_messages:
+            selected_messages = parsed.messages
         if settings.CHAPTERS_PER_BOOK and settings.CHAPTERS_PER_BOOK > 0:
             n_chapters = settings.CHAPTERS_PER_BOOK
         else:
             n_chapters = chunker.suggest_chapter_count(selected_messages)
         print(f"[orchestrator] using {n_chapters} chapters "
               f"({'auto' if not settings.CHAPTERS_PER_BOOK else 'fixed'})")
-        chapter_chunks = sessions_into_chapters(intelligence.selected_sessions, n_chapters)
+        chapter_chunks = sessions_into_chapters(chapter_sessions, n_chapters)
+        # Final safety net: if session grouping still produced nothing, split
+        # the raw messages by time so we never emit an empty book.
+        if not chapter_chunks:
+            chapter_chunks = chunker.into_chapters(parsed.messages, max(1, n_chapters))
         chapters: list[chapter_gen.Chapter] = []
         if not chapter_chunks:
             chapters.append(chapter_gen.Chapter(

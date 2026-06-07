@@ -780,17 +780,58 @@ def _parse_scene_response(text: str) -> tuple[str, str]:
     return story.strip(), memory.strip()
 
 
+# Stopwords used when deriving a chapter title/illustration from raw words.
+_TITLE_STOPWORDS = set("""
+a an the and or but if then so for to of in on at by with from as is am are
+was were be been being have has had do does did will would could should can
+i me my you your we us our he she it they them this that these those not no
+yes ok okay yeah ya just like get got go going gonna want need think know
+say said u ur n r y idk btw omg pls plz really very also what when how why
+who where which here there now then today tomorrow yesterday lol haha hey hi
+""".split())
+
+
+def _distinctive_words(messages: list[Message], limit: int = 3) -> list[str]:
+    """Most frequent content words across a chapter's text messages."""
+    from collections import Counter
+    counter: Counter = Counter()
+    for m in messages:
+        if m.kind != MessageKind.TEXT:
+            continue
+        for word in re.findall(r"[a-zA-Z']{3,}", m.text.lower()):
+            if word not in _TITLE_STOPWORDS:
+                counter[word] += 1
+    return [w for w, _ in counter.most_common(limit)]
+
+
 def _chapter_title_from_messages(index: int, messages: list[Message]) -> str:
-    text = " ".join(
-        m.text.lower() for m in messages if m.kind == MessageKind.TEXT
-    )
-    if any(word in text for word in ("pic", "photo", "bhej", "bhejo")):
-        return "The Photo Refusal"
-    if "good night" in text and ("love you" in text or "miss" in text):
-        return "Before Good Night"
-    if "call" in text:
-        return "Calls Left Open"
+    """Derive a short, content-grounded title from the chapter's own words.
+
+    Avoids inventing narrative the messages don't support, and avoids the
+    old hardcoded titles that were tuned to one specific chat.
+    """
+    words = _distinctive_words(messages, limit=2)
+    if words:
+        return " & ".join(w.capitalize() for w in words)
+    if messages:
+        return messages[0].timestamp.strftime("%B %Y")
     return f"Chapter {index}"
+
+
+def _illustration_prompt_from_messages(messages: list[Message]) -> str:
+    """A per-chapter clipart-matching prompt. Uses the chapter's hour and
+    distinctive words so different chapters pick different illustrations
+    instead of all sharing one hardcoded prompt."""
+    words = _distinctive_words(messages, limit=4)
+    hour = messages[0].timestamp.hour if messages else 21
+    if hour < 6 or hour >= 21:
+        scene = "a phone glowing in a dim room late at night"
+    elif hour < 12:
+        scene = "morning light, a warm cup beside a phone"
+    else:
+        scene = "a cozy afternoon, messages on a screen"
+    extra = (", themes: " + ", ".join(words)) if words else ""
+    return f"{scene}{extra}"
 
 
 def _chapter_when_from_messages(start: date, end: date, messages: list[Message]) -> str:
@@ -1003,11 +1044,33 @@ async def _extract_emotional_arc(
         max_tokens=500,
     )
 
-    try:
-        result = json.loads(response)
-        return result
-    except json.JSONDecodeError:
+    return _loads_json_lenient(response)
+
+
+def _loads_json_lenient(response: str) -> dict:
+    """Parse a JSON object out of an LLM response that may be wrapped in
+    markdown code fences or surrounded by prose. Local models (Llama 3.1
+    8B) frequently do this, and strict json.loads would silently return
+    empty events/tensions, gutting the emotional grounding."""
+    if not response:
         return {"events": [], "tensions": []}
+    text = response.strip()
+    # Strip ```json ... ``` fences if present
+    fence = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
+    if fence:
+        text = fence.group(1).strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    # Last resort: grab the first {...} block
+    brace = re.search(r"\{.*\}", text, re.DOTALL)
+    if brace:
+        try:
+            return json.loads(brace.group(0))
+        except json.JSONDecodeError:
+            pass
+    return {"events": [], "tensions": []}
 
 
 def _merge_emotional_arcs(arcs: list[dict]) -> str:
@@ -1074,16 +1137,15 @@ async def _generate_chapter_with_two_pass(
         emotional_context=emotional_summary,
     )
 
+    pull_quote, pull_quote_author = _pick_commentary_quote(chapter_messages)
     return Chapter(
         index=index,
         title=_chapter_title_from_messages(index, chapter_messages),
         when=_chapter_when_from_messages(start_date, end_date, chapter_messages),
         body=body,
-        pull_quote="",
-        pull_quote_author="",
-        illustration_prompt=(
-            "A phone glowing in a dim room, messages unfolding late at night"
-        ),
+        pull_quote=pull_quote,
+        pull_quote_author=pull_quote_author,
+        illustration_prompt=_illustration_prompt_from_messages(chapter_messages),
     )
 
 

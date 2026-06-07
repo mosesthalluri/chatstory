@@ -2,6 +2,7 @@
 Gift Engine — evidence-grounded recommendations (no LLM).
 """
 
+import asyncio
 import json
 import re
 import traceback
@@ -320,14 +321,16 @@ async def run_gift_engine_pipeline(job_id: str, upload_path: Path) -> None:
             {"name": "Render gift PDF", "status": "pending", "progress": 0},
         ]
         jobs.update(job_id, state="parsing", progress=12, message="Reading your conversations…", phases=phases)
-        parsed = parse_chat(upload_path)
+        parsed = await asyncio.to_thread(parse_chat, upload_path)
         if parsed.message_count > settings.MAX_MESSAGES:
             raise ValueError(f"Too many messages ({parsed.message_count}). Maximum is {settings.MAX_MESSAGES}.")
 
         phases[0] = {"name": "Parse export", "status": "done", "progress": 100}
         phases[1] = {"name": "Match evidence", "status": "in_progress", "progress": 55}
         jobs.update(job_id, state="generating_gifts", progress=58, message="Matching gifts to real quotes…", phases=phases)
-        gifts = compute_gifts(parsed.messages, parsed.detected_format, parsed.senders)
+        gifts = await asyncio.to_thread(
+            compute_gifts, parsed.messages, parsed.detected_format, parsed.senders
+        )
         gifts["parser_warnings"] = parsed.parser_warnings
 
         phases[1] = {"name": "Match evidence", "status": "done", "progress": 100}

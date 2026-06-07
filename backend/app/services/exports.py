@@ -14,7 +14,9 @@ def is_unlocked(job_id: str) -> bool:
 
 
 def download_links(job_id: str, product: str | None = None) -> dict[str, str]:
-    product = product or (jobs.load(job_id).product if jobs.load(job_id) else None) or "chatstory"
+    if not product:
+        status = jobs.load(job_id)
+        product = (status.product if status else None) or "chatstory"
     if product == "chat-wrapped":
         return {
             "view": f"/wrapped/{job_id}",
@@ -32,7 +34,7 @@ def download_links(job_id: str, product: str | None = None) -> dict[str, str]:
         "view": f"/job/{job_id}",
         "preview_pdf": f"/download/chatstory/{job_id}/preview",
         "full_pdf": f"/download/chatstory/{job_id}/full",
-        "unlock": f"/unlock/chat-wrapped/{job_id}",
+        "unlock": f"/unlock/chatstory/{job_id}",
     }
 
 

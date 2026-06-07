@@ -47,7 +47,7 @@ async function poll() {
   const resp = await fetch(`/api/status/${jobId}`);
   const data = await resp.json();
   render(data);
-  if (data.state === 'done' || data.state === 'error') clearInterval(timer);
+  if (data.state === 'done' || data.state === 'failed') clearInterval(timer);
 }
 
 function render(s) {
@@ -65,15 +65,16 @@ function render(s) {
       document.getElementById('actions').innerHTML = `<a class="btn primary" href="/download/chatstory/${jobId}/full">Download full PDF</a><a class="btn secondary" href="/preview/${jobId}">Preview</a>`;
     } else {
       document.getElementById('result-copy').textContent = 'Preview is free. Unlock for the full PDF after Paytm verification.';
-      document.getElementById('actions').innerHTML = `<a class="btn secondary" href="/preview/${jobId}">Open preview</a><a class="btn primary" href="/unlock/chat-wrapped/${jobId}">Unlock full book</a>`;
+      document.getElementById('actions').innerHTML = `<a class="btn secondary" href="/preview/${jobId}">Open preview</a><a class="btn primary" href="/unlock/chatstory/${jobId}">Unlock full book</a>`;
     }
   }
-  if (s.state === 'error') {
-    document.getElementById('error-box').innerHTML = `<div class="error">${s.error || 'Unknown error'}</div>`;
+  if (s.state === 'failed') {
+    document.getElementById('title').textContent = 'Something stopped';
+    document.getElementById('error-box').innerHTML = `<div class="error">${s.error || s.message || 'Unknown error'}</div>`;
   }
 }
 function stateTitle(state) {
-  return ({queued:'Queued', parsing:'Parsing export', analyzing:'Computing signals', writing:'Writing', rendering:'Rendering PDF', error:'Something stopped'})[state] || state;
+  return ({queued:'Queued', parsing:'Parsing export', analyzing:'Computing signals', generating_story:'Writing', writing:'Writing', rendering:'Rendering PDF', failed:'Something stopped'})[state] || state;
 }
 async function pay() {
   const resp = await fetch(`/api/pay/${jobId}`, {method:'POST'});

@@ -42,6 +42,14 @@ from .settings import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Ensure a known admin account exists if ADMIN_EMAIL/ADMIN_PASSWORD are
+    # configured. Without this, "first signup becomes admin" means a random
+    # visitor could claim admin, and an existing non-admin user base would
+    # lock admin out entirely.
+    try:
+        auth.seed_admin()
+    except Exception as exc:  # never block startup on seeding
+        print(f"[startup] admin seed skipped: {exc}")
     await job_queue.start()
     yield
     await job_queue.stop()
@@ -77,6 +85,17 @@ PRODUCTS = {
         "api_upload": "/api/gift-engine/upload",
         "api_status": "/api/gift-engine/status",
         "result_path": "/gift-engine/results",
+    },
+    # ChatStory uses the legacy /job status page rather than the generic
+    # /processing page, but it still needs an entry here so the shared
+    # /unlock/{slug} and /download/{slug} hub routes resolve instead of 404.
+    "chatstory": {
+        "title": "ChatStory Storybook",
+        "kicker": "Storybook",
+        "description": "Turn a chat export into an illustrated PDF storybook.",
+        "api_upload": "/api/upload",
+        "api_status": "/api/status",
+        "result_path": "/job",
     },
 }
 
@@ -474,7 +493,8 @@ async def admin_verify_payment(request: Request, payment_id: str, approved: str 
 
 @app.post("/api/paytm/macro-verify")
 async def paytm_macro_verify(amount: int = Form(...), transaction_id: str = Form(...), reference: str = Form(...), token: str = Form(...)):
-    if token != settings.SECRET_KEY:
+    import hmac
+    if not hmac.compare_digest(token, settings.SECRET_KEY):
         raise HTTPException(403, "Bad webhook token")
     record = payments.macro_verify(amount, transaction_id, reference)
     if record:
