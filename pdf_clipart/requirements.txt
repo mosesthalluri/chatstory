@@ -1,0 +1,18 @@
+# ---- Core (always required) ----
+PyMuPDF==1.24.10      # read text + bounding boxes, embed images, save PDF
+Pillow==10.4.0        # image handling + the offline 'stub' backend
+
+# ---- Remote API backend only ----
+httpx==0.27.2         # used only when --backend api
+
+# ---- Local Stable Diffusion backend (GPU) ----
+# Install these only if you'll run --backend local (the default).
+# IMPORTANT: install a CUDA build of torch that matches your driver, e.g.
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+# then:
+diffusers==0.30.3
+transformers==4.44.2
+accelerate==0.34.2
+safetensors==0.4.5
+peft==0.13.2          # required for LCM-LoRA (--model sd15-lcm)
+# torch  -> install separately with the correct CUDA index URL (see above)
