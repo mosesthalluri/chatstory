@@ -13,6 +13,8 @@ from dataclasses import asdict
 from pathlib import Path
 
 from .. import models
+from ..core import build_intelligence
+from ..core.sessions import sessions_into_chapters
 from ..parsers import parse_chat
 from ..pipeline import stats, chunker, chapter_gen
 from ..services import image_gen, pdf_render, jobs
@@ -93,7 +95,14 @@ async def run_pipeline(job_id: str, upload_path: Path) -> None:
 
         # 2. Stats
         jobs.update(job_id, state="analyzing", progress=15, message="Computing stats…", phases=phases)
+        intelligence = build_intelligence(parsed.messages, parsed.senders)
         chat_stats = stats.compute_stats(parsed)
+        chat_stats["inside_jokes"] = [
+            (phrase["phrase"], phrase["count"])
+            for phrase in intelligence.semantic_phrases
+            if phrase["phrase_type"] == "relationship_specific"
+        ][:5]
+        chat_stats["relationship_intelligence"] = intelligence.summary()
         jobs.update(job_id, stats=chat_stats)
 
         # 3. Skip compressed summary hierarchy.
@@ -125,14 +134,32 @@ async def run_pipeline(job_id: str, upload_path: Path) -> None:
         jobs.update(job_id, state="generating_story", progress=78, message="Writing chapters…", phases=phases)
         # CHAPTERS_PER_BOOK=0 means "auto" — pick based on chat length.
         # Any positive value forces that exact count.
+        selected_messages = [
+            message
+            for session in intelligence.selected_sessions
+            for message in session.messages
+        ]
         if settings.CHAPTERS_PER_BOOK and settings.CHAPTERS_PER_BOOK > 0:
             n_chapters = settings.CHAPTERS_PER_BOOK
         else:
-            n_chapters = chunker.suggest_chapter_count(parsed.messages)
+            n_chapters = chunker.suggest_chapter_count(selected_messages)
         print(f"[orchestrator] using {n_chapters} chapters "
               f"({'auto' if not settings.CHAPTERS_PER_BOOK else 'fixed'})")
-        chapter_chunks = chunker.into_chapters(parsed.messages, n_chapters)
+        chapter_chunks = sessions_into_chapters(intelligence.selected_sessions, n_chapters)
         chapters: list[chapter_gen.Chapter] = []
+        if not chapter_chunks:
+            chapters.append(chapter_gen.Chapter(
+                index=1,
+                title="The Quiet Parts",
+                when=parsed.messages[0].timestamp.strftime("%B %d, %Y"),
+                body=(
+                    "This export did not contain a conversation session with enough "
+                    "explicit emotional evidence for a grounded story chapter."
+                ),
+                pull_quote="",
+                pull_quote_author="",
+                illustration_prompt="A quiet phone on a bedside table",
+            ))
         for i, (start, end, msgs) in enumerate(chapter_chunks, 1):
             ch = await chapter_gen.generate_chapter(
                 index=i, start_date=start, end_date=end,

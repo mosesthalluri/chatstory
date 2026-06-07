@@ -4,7 +4,7 @@ uses these types — never raw dicts or strings.
 """
 
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Optional
 
@@ -38,12 +38,78 @@ class Message:
     # Optional fields — useful when present, fine when absent
     reply_to_id: Optional[str] = None
     message_id: Optional[str] = None
+    normalized_text: Optional[str] = None
 
     def to_dict(self) -> dict:
         d = asdict(self)
         d["timestamp"] = self.timestamp.isoformat()
         d["kind"] = self.kind.value
         return d
+
+
+@dataclass
+class ConversationSession:
+    """A coherent conversational scene separated by meaningful pauses."""
+    start_time: datetime
+    end_time: datetime
+    messages: list[Message]
+    participants: list[str]
+    duration: timedelta
+    score: float = 0.0
+    signal_counts: dict[str, int] = field(default_factory=dict)
+    sentiment: float = 0.0
+
+    def to_dict(self, *, include_messages: bool = False) -> dict:
+        data = {
+            "start_time": self.start_time.isoformat(),
+            "end_time": self.end_time.isoformat(),
+            "participants": self.participants,
+            "duration_seconds": int(self.duration.total_seconds()),
+            "message_count": len(self.messages),
+            "score": round(self.score, 2),
+            "signal_counts": self.signal_counts,
+            "sentiment": round(self.sentiment, 2),
+        }
+        if include_messages:
+            data["messages"] = [message.to_dict() for message in self.messages]
+        return data
+
+
+@dataclass
+class Memory:
+    """A grounded relationship memory extracted from a meaningful scene."""
+    summary: str
+    emotional_weight: float
+    evidence_messages: list[Message]
+    participants: list[str]
+    themes: list[str]
+    start_time: datetime
+    end_time: datetime
+    memory_type: str
+    evidence_score: float = 0.0
+
+    def to_dict(self) -> dict:
+        return {
+            "summary": self.summary,
+            "emotional_weight": round(self.emotional_weight, 2),
+            "evidence_messages": [message.to_dict() for message in self.evidence_messages],
+            "participants": self.participants,
+            "themes": self.themes,
+            "start_time": self.start_time.isoformat(),
+            "end_time": self.end_time.isoformat(),
+            "memory_type": self.memory_type,
+            "evidence_score": round(self.evidence_score, 2),
+        }
+
+
+@dataclass
+class MemoryMoment(Memory):
+    """A remembered interaction backed by explicit message evidence."""
+
+
+@dataclass
+class EmotionalMoment(MemoryMoment):
+    """A memory whose evidence includes explicit emotional language."""
 
 
 @dataclass

@@ -9,7 +9,9 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
-from ..models import Message, MessageKind
+from ..models import Message
+from ..core import build_intelligence
+from ..core.semantics import is_semantic_message, rank_evidence_messages, suppress_noise
 from ..parsers import parse_chat
 from ..pipeline import nlp_insights as nlp
 from ..settings import OUTPUT_DIR, TEMPLATES_DIR, settings
@@ -47,36 +49,42 @@ PATTERNS = {
         "keywords": ["morning", "night", "sleep", "walk", "office", "class", "commute", "routine", "workout"],
     },
     "support": {
-        "keywords": ["proud", "you got this", "i'm here", "miss you", "love you", "take care", "feel better", "here for you"],
+        "keywords": ["proud", "you got this", "i'm here", "i am here", "miss you", "love you", "take care", "feel better", "here for you"],
     },
 }
 
 URL_RE = re.compile(r"https?://\S+", re.I)
 
 
-def _scan(messages: list[Message]) -> dict[str, Any]:
+def _scan(messages: list[Message], memories: list) -> dict[str, Any]:
     signals = {name: {"score": 0, "examples": [], "keywords": Counter()} for name in PATTERNS}
     links = []
     sender_support = defaultdict(int)
+    memory_weight = {
+        id(message): memory.emotional_weight
+        for memory in memories
+        for message in memory.evidence_messages
+    }
 
     for msg in messages:
-        if msg.kind != MessageKind.TEXT or nlp.is_noise_message(msg.text):
+        if not is_semantic_message(msg):
             continue
-        text = msg.text.lower()
+        text = suppress_noise(msg.normalized_text or msg.text)
         for url in URL_RE.findall(msg.text):
             if any(host in url.lower() for host in ("spotify", "music", "youtu", "soundcloud")):
-                links.append(url.rstrip(").,"))
+                links.append(url.rstrip(").,")) 
         for name, cfg in PATTERNS.items():
             matched = [kw for kw in cfg["keywords"] if kw in text]
             if not matched:
                 continue
-            signals[name]["score"] += len(matched)
+            signals[name]["score"] += len(matched) + min(memory_weight.get(id(msg), 0) / 5, 3)
             signals[name]["keywords"].update(matched)
             if len(signals[name]["examples"]) < 12:
                 signals[name]["examples"].append({
                     "sender": msg.sender,
                     "text": msg.text[:200],
                     "matched": matched,
+                    "message": msg,
                 })
             if name == "support":
                 sender_support[msg.sender] += 1
@@ -107,7 +115,7 @@ def _gift(
     }
 
 
-def _ideas_for(category: str, signal: dict[str, Any]) -> list[dict[str, Any]]:
+def _ideas_for(category: str, signal: dict[str, Any], memories: list) -> list[dict[str, Any]]:
     if signal["score"] <= 0:
         return []
     kws = [k for k, _ in signal["keywords"].most_common(5)]
@@ -116,14 +124,20 @@ def _ideas_for(category: str, signal: dict[str, Any]) -> list[dict[str, Any]]:
     ideas: list[dict[str, Any]] = []
 
     def q(min_sc: float = 3.0):
-        return nlp.best_evidence_quote(examples, anchor_terms, min_score=min_sc)
+        ranked = rank_evidence_messages(
+            [example["message"] for example in examples],
+            anchor_terms,
+            memories,
+        )
+        if not ranked or ranked[0][0] < min_sc:
+            return "", "", 0.0
+        score, message = ranked[0]
+        return message.sender, message.text[:200], score
 
     if category == "spiritual":
         anchor = kws[0] if kws else "faith"
         title = f"Bible annotation tabs + journal because {anchor} shows up in your spiritual check-ins"
         sender, quote, sc = q()
-        if sc < 3:
-            sender, quote, sc = nlp.best_evidence_quote(examples, nlp.SPIRITUAL, min_score=2.5)
         ideas.append(_gift(
             category=category, budget="low_budget", gift_type="spiritual",
             title=title,
@@ -211,42 +225,43 @@ def _ideas_for(category: str, signal: dict[str, Any]) -> list[dict[str, Any]]:
     return [i for i in ideas if i.get("quote") and i.get("evidence_score", 0) >= 2.5][:2]
 
 
-def _inside_joke_gifts(phrases: list[dict], messages: list[Message]) -> list[dict[str, Any]]:
+def _inside_joke_gifts(phrases: list[dict], messages: list[Message], memories: list) -> list[dict[str, Any]]:
     gifts = []
-    for p in phrases[:3]:
-        anchor = set(nlp.meaningful_tokens(p["phrase"])) | {p["phrase"]}
-        examples = [{"sender": "", "text": p.get("quote", p["phrase"]), "matched": list(anchor)}]
-        for msg in messages:
-            if p["phrase"].lower() in msg.text.lower():
-                examples.append({"sender": msg.sender, "text": msg.text[:200], "matched": list(anchor)})
-        sender, quote, sc = nlp.best_evidence_quote(examples, anchor, min_score=2.0)
-        if not quote:
+    for phrase in [item for item in phrases if item["phrase_type"] == "relationship_specific"][:3]:
+        matches = [
+            message for message in messages
+            if phrase["phrase"] in suppress_noise(message.normalized_text or message.text)
+        ]
+        ranked = rank_evidence_messages(matches, {phrase["phrase"]}, memories)
+        if not ranked:
             continue
+        sc, evidence = ranked[0]
         gifts.append(_gift(
             category="inside_joke",
             budget="low_budget",
             gift_type="inside_joke",
-            title=f"Custom mug / sticker pack referencing “{p['phrase']}”",
+            title=f"Custom mug / sticker pack referencing “{phrase['phrase']}”",
             reason=(
-                f"This phrase appears {p['count']} times — it's clearly yours. "
-                "Turn the bit into something they'll recognize instantly."
+                f"“{phrase['phrase']}” recurs in meaningful conversation, "
+                "with enough specificity to feel recognizable rather than generic."
             ),
-            quote=quote,
-            quote_sender=sender,
+            quote=evidence.text[:200],
+            quote_sender=evidence.sender,
             evidence_score=sc,
         ))
     return gifts
 
 
 def compute_gifts(messages: list[Message], detected_format: str, senders: list[str]) -> dict[str, Any]:
-    scanned = _scan(messages)
+    intelligence = build_intelligence(messages, senders)
+    scanned = _scan(messages, intelligence.memories)
     signals = scanned["signals"]
-    phrases = nlp.extract_phrases(messages, min_count=2)
+    phrases = intelligence.semantic_phrases
 
     all_ideas: list[dict[str, Any]] = []
     for category, signal in signals.items():
-        all_ideas.extend(_ideas_for(category, signal))
-    all_ideas.extend(_inside_joke_gifts(phrases, messages))
+        all_ideas.extend(_ideas_for(category, signal, intelligence.memories))
+    all_ideas.extend(_inside_joke_gifts(phrases, messages, intelligence.memories))
     all_ideas = nlp.dedupe_gifts(all_ideas)
     all_ideas.sort(key=lambda g: -g.get("evidence_score", 0))
 
@@ -267,6 +282,7 @@ def compute_gifts(messages: list[Message], detected_format: str, senders: list[s
         },
         "music_links": scanned["music_links"],
         "support_patterns": scanned["support_by_sender"],
+        "relationship_intelligence": intelligence.summary(),
         "teasers": [
             "Every gift is tied to a chat quote that passed evidence matching.",
             "Inside-joke gifts only appear when a phrase repeats with a real message behind it.",

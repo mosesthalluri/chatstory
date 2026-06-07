@@ -9,6 +9,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from ..models import Message, MessageKind, ParsedChat
+from ..core.normalization import normalize_messages
 from .detect import detect_format
 from . import whatsapp, instagram, telegram, generic
 
@@ -117,7 +118,7 @@ def parse_chat(path: Path) -> ParsedChat:
         parser_warnings.append("Reordered messages chronologically")
 
     return ParsedChat(
-        messages=cleaned,
+        messages=normalize_messages(cleaned),
         detected_format=result.detected_format,
         senders=result.senders,
         raw_message_count=pre_merge_count,

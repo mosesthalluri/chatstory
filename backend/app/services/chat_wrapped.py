@@ -11,6 +11,7 @@ from typing import Any
 import emoji as emoji_lib
 
 from ..models import Message, MessageKind
+from ..core import build_intelligence
 from ..parsers import parse_chat
 from ..pipeline import nlp_insights as nlp
 from ..settings import OUTPUT_DIR, TEMPLATES_DIR, settings
@@ -71,8 +72,16 @@ def _support_counter(messages: list[Message]) -> Counter:
 
 def _build_teasers(persona: dict, phrases: list, viral: dict, arc: list, top_starter: tuple) -> list[str]:
     teasers = [f"Your persona: {persona.get('name', 'hidden')} — unlock the full story behind it."]
-    if phrases:
-        teasers.append(f"“{phrases[0]['phrase']}” repeats {phrases[0]['count']}× — likely an inside joke.")
+    inside_reference = next(
+        (phrase for phrase in phrases if phrase.get("phrase_type") == "relationship_specific"),
+        None,
+    )
+    if inside_reference:
+        teasers.append(
+            f"“{inside_reference['phrase']}” returns in meaningful scenes — a shared reference worth remembering."
+        )
+    elif phrases:
+        teasers.append(f"“{phrases[0]['phrase']}” recurs as one of your emotional rituals.")
     vp = viral.get("vulnerable_phrase")
     if vp:
         teasers.append(f"A phrase that only spikes in vulnerable moments is locked: “{vp['phrase']}”.")
@@ -92,6 +101,7 @@ def compute_wrapped(
     if not messages:
         return {"error": "no messages"}
 
+    intelligence = build_intelligence(messages, senders)
     text_messages = [m for m in messages if m.kind == MessageKind.TEXT]
     media_messages = [m for m in messages if m.kind == MessageKind.MEDIA_PLACEHOLDER]
     active_dates = {m.timestamp.date() for m in messages}
@@ -120,21 +130,29 @@ def compute_wrapped(
     support = _support_counter(messages)
     top_supporter = support.most_common(1)[0][0] if support else None
 
-    phrases = nlp.extract_phrases(messages)
-    inside_jokes = phrases[:8]
-    shared_vocab = nlp.shared_vocabulary(messages, senders)
-    nicknames = nlp.nicknames(messages, senders)
+    phrases = intelligence.semantic_phrases
+    language = intelligence.analytics["shared_language_evolution"]
+    inside_jokes = language["inside_joke_candidates"]
+    shared_vocab = language["recurring_phrases"]
+    nicknames = language["nicknames"] or nlp.nicknames(messages, senders)
     persona = nlp.persona_from_signals(messages, phrases, hour_counts)
-    arc = nlp.relationship_arc_events(messages)
+    arc = intelligence.analytics["relationship_timeline"]
     emotion = nlp.emotional_reading(messages, top_supporter)
     clock = nlp.emotional_clock_narrative(messages)
     viral = nlp.viral_moments(messages, phrases, persona, hour_counts)
 
-    anchor = persona.get("anchor_phrase") or (phrases[0]["phrase"] if phrases else "")
-    if anchor and persona.get("name"):
-        cinematic = f"{persona['name']} — the thread keeps circling back to “{anchor}”."
+    strongest_memory = intelligence.memories[0] if intelligence.memories else None
+    if strongest_memory:
+        evidence = strongest_memory.evidence_messages[0]
+        emotion["why"] = strongest_memory.summary
+        viral["most_human_moment"] = {
+            "quote": evidence.text[:220],
+            "sender": evidence.sender,
+            "why": strongest_memory.summary,
+        }
+        cinematic = strongest_memory.summary
     elif persona.get("name"):
-        cinematic = f"{persona['name']} — {emotion['why'][:120]}…"
+        cinematic = f"{persona['name']} — {emotion['why'][:120]}..."
     else:
         cinematic = emotion.get("why", "Your chat, read closely.")
 
@@ -158,6 +176,19 @@ def compute_wrapped(
         "persona": {"name": persona["name"], "why": persona["why"]},
         "emotional_clock": clock,
         "relationship_arc": arc,
+        "relationship_timeline": intelligence.analytics["relationship_timeline"],
+        "emotional_trend": intelligence.analytics["emotional_trend"],
+        "silence_drift": intelligence.analytics["silence_drift"],
+        "communication_rhythm": intelligence.analytics["communication_rhythm"],
+        "shared_language_evolution": intelligence.analytics["shared_language_evolution"],
+        "meaningful_sessions": [
+            session.to_dict() for session in intelligence.selected_sessions
+        ],
+        "strongest_moments": [memory.to_dict() for memory in intelligence.memories[:8]],
+        "emotional_turning_points": [
+            memory.to_dict() for memory in intelligence.memories
+            if memory.memory_type in {"conflict", "reconnection", "reassurance", "comfort"}
+        ][:8],
         "viral_moments": viral,
         "night_owl": {
             "hours": sorted(NIGHT_HOURS),
