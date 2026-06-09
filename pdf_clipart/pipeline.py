@@ -109,9 +109,11 @@ def annotate_pdf(
                     notify(i + 1, total, results[-1])
                     continue
 
-                prompts = decision.build_prompts(content.text, hits, config)
-                log.info("[page %d/%d] generate — %s (%d clipart)",
-                         i + 1, total, reason, len(prompts))
+                from .mood import detect_mood
+                mood = detect_mood(content.text)
+                prompts = decision.build_prompts(content.text, hits, config, mood.prompt_modifier)
+                log.info("[page %d/%d] generate — %s, mood=%s (%d clipart)",
+                         i + 1, total, reason, mood.name, len(prompts))
 
                 # Generate + collect PNGs ONE AT A TIME. We keep at most the
                 # prompts list and the small PNG bytes for this single page.
@@ -130,9 +132,12 @@ def annotate_pdf(
                                     n, len(prompts), exc)
 
                 from . import placement
+                # Theme the page first (background wash + accent bands), then
+                # lay the clipart on top.
+                placement.apply_theme(page, content, mood, config)
                 placed = placement.place_cliparts(page, content, pngs, config)
                 cliparts_added += placed
-                if placed:
+                if placed or config.theme_pages:
                     annotated_pages += 1
                 results.append(PageResult(i, True, reason, placed=placed))
                 notify(i + 1, total, results[-1])

@@ -35,6 +35,33 @@ pip install torch --index-url https://download.pytorch.org/whl/cu121
 > First local run downloads the model (~2-5 GB) from Hugging Face and caches
 > it. No key needed for SD-Turbo / SD 1.5.
 
+### Reusing models you already have (skip the download)
+
+If you already have Stable Diffusion models on disk, point `--model-path` at
+them instead of downloading SD-Turbo:
+
+```bash
+# A single-file checkpoint from Automatic1111 / ComfyUI (.safetensors/.ckpt):
+python -m pdf_clipart input.pdf \
+    --model-path "C:\stable-diffusion-webui\models\Stable-diffusion\v1-5.safetensors" \
+    --model sd15-lcm --steps 4 --guidance 1.0
+
+# A local diffusers folder (one that contains model_index.json):
+python -m pdf_clipart input.pdf --model-path "D:\models\sd-turbo"
+```
+
+Notes:
+- `--model-path` accepts a **single-file** `.safetensors`/`.ckpt` (loaded via
+  `from_single_file`) **or** a **diffusers folder** (loaded via
+  `from_pretrained`). Single-file checkpoints are almost always SD 1.5 — pair
+  them with `--model sd15-lcm --steps 4` for fast generation.
+- If your models were downloaded by *another diffusers project*, they're
+  already in the shared HF cache and will be reused automatically. To use a
+  cache in a non-default location, set the env var before running:
+  `set HF_HOME=D:\hf_cache` (Windows) / `export HF_HOME=/data/hf_cache`.
+- The default SD-Turbo download now requests the **fp16 variant** (~half the
+  size) when available.
+
 ## Run
 
 ```bash

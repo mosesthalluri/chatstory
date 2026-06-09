@@ -107,11 +107,13 @@ def should_generate(text: str, config: Config) -> tuple[bool, str, Counter]:
     return True, "generic content", hits
 
 
-def build_prompts(text: str, hits: Counter, config: Config) -> list[str]:
+def build_prompts(text: str, hits: Counter, config: Config,
+                  mood_modifier: str = "") -> list[str]:
     """Build up to `max_cliparts_per_page` image prompts for a page.
 
     Prefers distinct visual themes; if there aren't enough, derives extra
-    subjects from the most frequent content words.
+    subjects from the most frequent content words. `mood_modifier` (e.g.
+    "romantic, soft pink") is woven in so the art matches the page mood.
     """
     subjects: list[str] = [theme for theme, _ in hits.most_common(config.max_cliparts_per_page)]
 
@@ -127,7 +129,8 @@ def build_prompts(text: str, hits: Counter, config: Config) -> list[str]:
             if word not in subjects:
                 subjects.append(word)
 
-    prompts = [f"{subject}, {config.image_style}" for subject in subjects]
+    mood = f"{mood_modifier}, " if mood_modifier else ""
+    prompts = [f"{subject}, {mood}{config.image_style}" for subject in subjects]
     return prompts[: config.max_cliparts_per_page]
 
 

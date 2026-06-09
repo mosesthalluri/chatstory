@@ -55,6 +55,7 @@ class LocalDiffusersBackend(ImageBackend):
         if self._pipe is not None:
             return
 
+        import os
         import torch  # lazy — heavy import
         from diffusers import AutoPipelineForText2Image
 
@@ -63,22 +64,51 @@ class LocalDiffusersBackend(ImageBackend):
         dtype = torch.float16 if has_cuda else torch.float32
         cfg = self.config
 
-        if cfg.model == "sd15-lcm":
+        is_lcm = cfg.model == "sd15-lcm"
+
+        if cfg.model_path:
+            # --- Reuse a model the user already has on disk ---
+            path = os.path.expanduser(cfg.model_path)
+            if path.lower().endswith((".safetensors", ".ckpt")):
+                # A1111 / ComfyUI single-file checkpoint.
+                from diffusers import StableDiffusionPipeline
+                log.info("Loading single-file checkpoint: %s", path)
+                pipe = StableDiffusionPipeline.from_single_file(
+                    path, torch_dtype=dtype, safety_checker=None,
+                )
+            else:
+                # A local diffusers folder (has model_index.json).
+                log.info("Loading local diffusers model: %s", path)
+                pipe = AutoPipelineForText2Image.from_pretrained(
+                    path, torch_dtype=dtype, safety_checker=None,
+                )
+        elif is_lcm:
             model_id = "runwayml/stable-diffusion-v1-5"
             log.info("Loading SD 1.5 + LCM-LoRA (%s)…", model_id)
             pipe = AutoPipelineForText2Image.from_pretrained(
                 model_id, torch_dtype=dtype, safety_checker=None,
             )
+        else:  # default: sd-turbo
+            model_id = "stabilityai/sd-turbo"
+            log.info("Loading SD-Turbo (%s)…", model_id)
+            # Prefer the fp16 weight variant — it's ~half the download/size.
+            try:
+                pipe = AutoPipelineForText2Image.from_pretrained(
+                    model_id, torch_dtype=dtype, variant="fp16", safety_checker=None,
+                )
+            except Exception:
+                pipe = AutoPipelineForText2Image.from_pretrained(
+                    model_id, torch_dtype=dtype, safety_checker=None,
+                )
+
+        # Apply LCM-LoRA on top of any SD 1.5 base (hub or local checkpoint)
+        # when the user asked for sd15-lcm. This is what makes 4-step
+        # generation work with a reused SD 1.5 checkpoint.
+        if is_lcm:
             from diffusers import LCMScheduler
             pipe.scheduler = LCMScheduler.from_config(pipe.scheduler.config)
             pipe.load_lora_weights("latent-consistency/lcm-lora-sdv1-5")
             pipe.fuse_lora()
-        else:  # default: sd-turbo
-            model_id = "stabilityai/sd-turbo"
-            log.info("Loading SD-Turbo (%s)…", model_id)
-            pipe = AutoPipelineForText2Image.from_pretrained(
-                model_id, torch_dtype=dtype, safety_checker=None,
-            )
 
         # --- 4GB VRAM survival kit ---
         # Offload weights to CPU and stream them to GPU per-submodule. This

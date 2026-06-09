@@ -2,107 +2,105 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Cormorant+Garamond:ital,wght@1,500&display=swap" rel="stylesheet">
 <style>
-@page { size: 148mm 210mm; margin: 0; }
-* { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; }
-body {
-  font-family: Inter, Arial, sans-serif;
-  color: #f7f7fa;
-  background: #09090d;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-.page {
-  width: 148mm;
-  min-height: 210mm;
-  max-height: 210mm;
-  padding: 14mm 16mm;
-  page-break-after: always;
-  page-break-inside: avoid;
-  overflow: hidden;
-  background: radial-gradient(ellipse 80% 50% at 20% 0%, rgba(229,9,20,.35), transparent 55%),
-              linear-gradient(165deg, #09090d 0%, #12121a 50%, #050507 100%);
-}
-.page:last-child { page-break-after: auto; }
-.brand { color: #e50914; font-size: 11pt; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 10mm; }
-.eyebrow { color: #ffb4b8; font-size: 7.5pt; text-transform: uppercase; letter-spacing: .14em; font-weight: 800; margin-bottom: 3mm; }
-h1 { font-size: 32pt; line-height: 1.02; margin: 0 0 5mm; font-weight: 800; }
-h2 { font-size: 18pt; margin: 0 0 4mm; font-weight: 800; line-height: 1.15; }
-.lead { color: #c9cbd6; font-size: 10.5pt; line-height: 1.55; margin: 0 0 6mm; max-width: 118mm; }
-.quote-block { margin: 6mm 0; padding: 5mm 6mm; border-left: 2px solid #e50914; background: rgba(255,255,255,.06); border-radius: 0 3mm 3mm 0; }
-.quote-block p { margin: 0; font-size: 10pt; font-style: italic; color: #e8e9ef; line-height: 1.5; }
-.quote-meta { font-size: 8pt; color: #878b9a; margin-top: 2mm; font-style: normal; }
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; margin-top: 5mm; }
-.stat { padding: 4mm; border: 1px solid rgba(255,255,255,.12); border-radius: 2.5mm; background: rgba(255,255,255,.05); }
-.num { font-size: 22pt; font-weight: 800; line-height: 1; }
-.label { color: #878b9a; font-size: 6.5pt; text-transform: uppercase; letter-spacing: .1em; margin-top: 1.5mm; font-weight: 700; }
-.chips { margin-top: 4mm; }
-.chip { display: inline-block; margin: 0 1.5mm 1.5mm 0; padding: 2mm 3mm; border-radius: 20mm; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.1); font-size: 8.5pt; }
-.arc-item { margin-bottom: 4mm; padding-bottom: 4mm; border-bottom: 1px solid rgba(255,255,255,.08); }
-.arc-item:last-child { border: none; }
-.arc-title { font-weight: 700; font-size: 10pt; color: #fff; }
-.arc-why { font-size: 9pt; color: #a8acb8; line-height: 1.45; margin-top: 1mm; }
+  @page { size: A5; margin: 0; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:'Inter',sans-serif; color:#23202b; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .page { width:148mm; min-height:210mm; padding:14mm 13mm; page-break-after:always; }
+  .page:last-child { page-break-after:auto; }
+  .cover { background:linear-gradient(135deg,#241043,#5a2a83 55%,#1a1230); color:#fff;
+    display:flex; flex-direction:column; justify-content:center; text-align:center; }
+  .cover .kicker { letter-spacing:.4em; font-size:9pt; color:#e8c8ff; text-transform:uppercase; }
+  .cover h1 { font-family:'Cormorant Garamond',serif; font-style:italic; font-size:38pt; margin:6mm 0 2mm; }
+  .cover .names { font-size:14pt; color:#f0d9ff; font-weight:600; }
+  .cover .range { margin-top:3mm; letter-spacing:.18em; font-size:9pt; color:#cdbfe6; }
+  .cover .intro { margin-top:8mm; font-size:11pt; color:#e8e2f2; }
+  h2 { font-size:14pt; margin:0 0 3mm; }
+  .eyebrow { letter-spacing:.3em; font-size:8pt; color:#a06ad0; text-transform:uppercase; font-weight:600; margin-top:7mm; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:4mm; margin-top:3mm; }
+  .stat { background:#f3ecfa; border-radius:3mm; padding:5mm; text-align:center; }
+  .stat .n { font-size:22pt; font-weight:800; color:#3a1d5d; }
+  .stat .l { font-size:7.5pt; letter-spacing:.12em; text-transform:uppercase; color:#6b6378; margin-top:1mm; }
+  .pill { display:inline-block; background:#efe7f7; border-radius:999px; padding:2mm 4mm; margin:1.5mm 1.5mm 0 0; font-size:9pt; }
+  .quote { border-left:2pt solid #b06ab3; padding:2mm 4mm; margin:3mm 0; font-size:10pt; font-style:italic; }
+  .quote .who { font-style:normal; font-size:7.5pt; color:#8a8296; margin-top:1mm; }
+  .meter { display:flex; align-items:center; gap:3mm; margin:2mm 0; }
+  .meter .name { width:28mm; font-size:9pt; color:#6b6378; }
+  .meter .bar { flex:1; height:3mm; background:#efe7f7; border-radius:999px; overflow:hidden; }
+  .meter .bar > span { display:block; height:100%; background:linear-gradient(90deg,#E8A87C,#b06ab3); }
+  .letter { font-size:11pt; line-height:1.7; font-style:italic; color:#3a3444; }
+  .closing { text-align:center; font-family:'Cormorant Garamond',serif; font-style:italic; font-size:18pt; color:#5a2a83; margin-top:10mm; }
+  .emoji { font-size:30pt; }
 </style>
 </head>
 <body>
+{% set d = stats %}
+<!-- Cover -->
+<div class="page cover">
+  <div class="kicker">Chat Wrapped</div>
+  <h1>{{ d.cover.title if d.cover else "Your ChatWrapped" }}</h1>
+  <div class="names">{{ d.cover.names if d.cover }}</div>
+  <div class="range">{{ d.cover.date_range if d.cover }}</div>
+  <div class="intro">{{ d.cover.intro if d.cover }}</div>
+</div>
 
-<section class="page">
-  <div class="brand">ChatStory</div>
-  <div class="eyebrow">Chat Wrapped · Keepsake</div>
-  <h1>{{ stats.persona.name if stats.persona else "Your bond" }}</h1>
-  <p class="lead">{{ stats.cinematic_headline }}</p>
-  <p class="lead" style="font-size:9pt;color:#878b9a">{{ stats.first_message_at[:10] }} — {{ stats.last_message_at[:10] }}</p>
+<!-- Stats + personality -->
+<div class="page">
+  <div class="eyebrow" style="margin-top:0">By the numbers</div>
   <div class="grid">
-    <div class="stat"><div class="num">{{ "{:,}".format(stats.total_messages) }}</div><div class="label">Messages</div></div>
-    <div class="stat"><div class="num">{{ stats.active_days }}</div><div class="label">Active days</div></div>
+    <div class="stat"><div class="n">{{ "{:,}".format(d.total_messages or 0) }}</div><div class="l">Messages</div></div>
+    <div class="stat"><div class="n">{{ d.active_days or 0 }}</div><div class="l">Active days</div></div>
+    <div class="stat"><div class="n">{{ d.longest_streak_days or 0 }}</div><div class="l">Longest streak</div></div>
+    <div class="stat"><div class="n" style="font-size:13pt">{{ (d.most_active_month.label if d.most_active_month else "—") }}</div><div class="l">Loudest month</div></div>
   </div>
-</section>
 
-{% if stats.viral_moments and stats.viral_moments.most_human_moment.quote %}
-<section class="page">
-  <div class="eyebrow">Most human moment</div>
-  <h2>The line that sounds like you two</h2>
-  <div class="quote-block">
-    <p>“{{ stats.viral_moments.most_human_moment.quote }}”</p>
-    <p class="quote-meta">— {{ stats.viral_moments.most_human_moment.sender }}</p>
-  </div>
-  <p class="lead">{{ stats.viral_moments.most_human_moment.why }}</p>
-  {% if stats.viral_moments.movie_tagline %}
-  <p class="lead" style="font-weight:600;color:#ffb4b8">{{ stats.viral_moments.movie_tagline }}</p>
+  <div class="eyebrow">Your chat personality</div>
+  <h2>{{ d.personality.title if d.personality }}</h2>
+  <p>{{ d.personality.why if d.personality }}</p>
+  <span class="pill">🎧 {{ d.soundtrack }}</span>
+
+  {% if d.emoji and d.emoji.signature %}
+  <div class="eyebrow">Emoji Wrapped</div>
+  <div class="emoji">{{ d.emoji.signature }}</div>
+  <p>{{ d.emoji.line }}</p>
   {% endif %}
-</section>
-{% endif %}
 
-<section class="page">
-  <div class="eyebrow">Your persona</div>
-  <h2>{{ stats.persona.name }}</h2>
-  <p class="lead">{{ stats.persona.why }}</p>
-  <p class="lead">{{ stats.emotional_insights.why }}</p>
-</section>
-
-<section class="page">
-  <div class="eyebrow">Relationship arc</div>
-  <h2>How the bond shifted</h2>
-  {% for chapter in stats.relationship_arc[:5] %}
-  <div class="arc-item">
-    <div class="arc-title">{{ chapter.title }}</div>
-    <div class="arc-why">{{ chapter.why }}</div>
-  </div>
+  {% if d.connection_meter %}
+  <div class="eyebrow">Connection meter</div>
+  {% for name, val in d.connection_meter.items() %}
+  <div class="meter"><div class="name">{{ name }}</div><div class="bar"><span style="width:{{ val }}%"></span></div></div>
   {% endfor %}
-</section>
+  {% endif %}
+</div>
 
-<section class="page">
-  <div class="eyebrow">Your language</div>
-  <h2>Shared rituals & jokes</h2>
-  <div class="chips">
-    {% for item in stats.shared_vocabulary[:12] %}<span class="chip">{{ item.word }}</span>{% endfor %}
-  </div>
-  <div class="chips" style="margin-top:5mm">
-    {% for item in stats.inside_jokes[:8] %}<span class="chip">{{ item.phrase }}</span>{% endfor %}
-  </div>
-</section>
+<!-- Moments + milestones + letter -->
+<div class="page">
+  {% set bm = d.best_moments or {} %}
+  <div class="eyebrow" style="margin-top:0">Best moments</div>
+  {% for key, lab in [('first_message','First message'),('longest_message','Longest message'),('sweetest','Sweetest line')] %}
+    {% set m = bm[key] %}
+    {% if m %}<div class="quote">“{{ m.text }}”<div class="who">— {{ m.sender }} · {{ m.date }} · {{ lab }}</div></div>{% endif %}
+  {% endfor %}
 
+  {% set ms = d.milestones or {} %}
+  {% set order = [('first_miss_you','First “miss you”'),('first_love','First “love you”'),('first_plan','First plan'),('first_apology','First apology'),('first_celebration','First celebration')] %}
+  {% if ms.values()|select|list %}
+  <div class="eyebrow">Milestones</div>
+  {% for key, lab in order %}{% if ms[key] %}<div class="quote">“{{ ms[key].text }}”<div class="who">{{ lab }} · {{ ms[key].sender }} · {{ ms[key].date }}</div></div>{% endif %}{% endfor %}
+  {% endif %}
+
+  {% if d.memory_cards %}
+  <div class="eyebrow">Memory cards</div>
+  {% for c in d.memory_cards %}<span class="pill">{{ c }}</span>{% endfor %}
+  {% endif %}
+
+  {% if d.letter %}
+  <div class="eyebrow">A short note</div>
+  <p class="letter">{{ d.letter }}</p>
+  {% endif %}
+
+  <div class="closing">{{ d.closing }}</div>
+</div>
 </body>
 </html>

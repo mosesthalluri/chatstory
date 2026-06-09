@@ -277,7 +277,13 @@ def compute_gifts(messages: list[Message], detected_format: str, senders: list[s
             name: {
                 "score": data["score"],
                 "top_keywords": data["keywords"].most_common(8),
-                "examples": data["examples"][:3],
+                # Strip the raw Message object (carries a datetime) — keep only
+                # JSON-safe fields, else saving the job / dumping JSON crashes
+                # with "object of type datetime is not JSON serializable".
+                "examples": [
+                    {"sender": e["sender"], "text": e["text"], "matched": e["matched"]}
+                    for e in data["examples"][:3]
+                ],
             }
             for name, data in signals.items()
         },
@@ -332,6 +338,9 @@ async def run_gift_engine_pipeline(job_id: str, upload_path: Path) -> None:
             compute_gifts, parsed.messages, parsed.detected_format, parsed.senders
         )
         gifts["parser_warnings"] = parsed.parser_warnings
+        # Guarantee the whole structure is JSON-safe (no datetime/Message
+        # objects) before it's stored on the job or written to disk.
+        gifts = json.loads(json.dumps(gifts, default=str))
 
         phases[1] = {"name": "Match evidence", "status": "done", "progress": 100}
         phases[2] = {"name": "Render gift PDF", "status": "in_progress", "progress": 75}
@@ -339,7 +348,7 @@ async def run_gift_engine_pipeline(job_id: str, upload_path: Path) -> None:
         output_dir = OUTPUT_DIR / job_id
         output_dir.mkdir(parents=True, exist_ok=True)
         (output_dir / "gift_engine.json").write_text(
-            json.dumps(gifts, indent=2, ensure_ascii=False),
+            json.dumps(gifts, indent=2, ensure_ascii=False, default=str),
             encoding="utf-8",
         )
         jobs.update(job_id, state="rendering", progress=92, message="Rendering gift keepsake PDF…", stats=gifts, phases=phases)

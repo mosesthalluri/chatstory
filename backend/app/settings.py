@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     # server), "api" (remote image service), or "stub" (offline placeholder).
     PDF_CLIPART_BACKEND: str = "local"
     PDF_CLIPART_MODEL: str = "sd-turbo"      # or "sd15-lcm"
+    # Reuse a model already on disk instead of downloading: point at a
+    # single-file .safetensors/.ckpt (A1111/ComfyUI) or a diffusers folder.
+    PDF_CLIPART_MODEL_PATH: str = ""
     PDF_CLIPART_STEPS: int = 2
     PDF_CLIPART_MAX_PER_PAGE: int = 2
 

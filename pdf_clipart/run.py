@@ -38,6 +38,9 @@ def _build_parser() -> argparse.ArgumentParser:
     # Backend
     p.add_argument("--backend", choices=["local", "api", "stub"], default="local")
     p.add_argument("--model", choices=["sd-turbo", "sd15-lcm"], default="sd-turbo")
+    p.add_argument("--model-path", dest="model_path", default=None,
+                   help="Reuse a local model: a single-file .safetensors/.ckpt "
+                        "(A1111/ComfyUI) or a diffusers folder. Skips downloading.")
     p.add_argument("--steps", dest="num_inference_steps", type=int, default=None,
                    help="Inference steps (default 2 for sd-turbo, 4 for sd15-lcm)")
     p.add_argument("--guidance", dest="guidance_scale", type=float, default=None,
@@ -63,6 +66,8 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="Generate even without a recognized visual theme")
     p.add_argument("--keep-images", dest="keep_temp_images", action="store_true",
                    default=None, help="Keep generated PNGs next to the output")
+    p.add_argument("--no-theme", dest="theme_pages", action="store_false",
+                   default=None, help="Don't tint/theme annotated pages")
 
     p.add_argument("-v", "--verbose", action="store_true")
     return p

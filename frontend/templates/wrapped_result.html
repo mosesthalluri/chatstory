@@ -3,132 +3,197 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Chat Wrapped · ChatStory</title>
+<title>Chat Wrapped</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/app.css">
+<style>
+  .wrap { display: grid; gap: 16px; }
+  .cover-card { text-align: center; padding: 38px 24px;
+    background: linear-gradient(135deg,#1a1030,#3a1d5d 50%,#101826); border-radius: 18px; }
+  .cover-card h1 { font-size: clamp(28px,5vw,46px); margin: 6px 0; }
+  .cover-card .names { font-size: 18px; color: #e8c8ff; font-weight: 600; }
+  .cover-card .range { color: var(--muted); letter-spacing:.08em; margin-top:6px; }
+  .cover-card .intro { max-width: 560px; margin: 14px auto 0; color:#d8dae4; }
+  .big { font-size: 34px; font-weight: 800; }
+  .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing:.12em; }
+  .cards-grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap:12px; }
+  .mini { background: rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1);
+    border-radius:14px; padding:16px; }
+  .pill { display:inline-block; background:rgba(255,255,255,.08); border-radius:999px;
+    padding:6px 12px; margin:4px 6px 0 0; font-size:13px; }
+  .meter-row { display:flex; align-items:center; gap:12px; margin:8px 0; }
+  .meter-row .name { width:110px; font-size:13px; color:var(--muted); }
+  .meter-bar { flex:1; height:10px; background:rgba(255,255,255,.08); border-radius:999px; overflow:hidden; }
+  .meter-bar > span { display:block; height:100%; background:linear-gradient(90deg,#E8A87C,#b06ab3); }
+  .quote { border-left:3px solid #E8A87C; padding:8px 14px; margin:8px 0; color:#e7e9f2; }
+  .quote .who { color:var(--muted); font-size:12px; }
+  .emoji-big { font-size:40px; }
+  .letter { font-size:17px; line-height:1.7; color:#e7e9f2; font-style:italic; }
+  .closing { text-align:center; font-size:20px; color:#e8c8ff; font-style:italic; padding:24px; }
+</style>
 </head>
 <body>
 <main class="shell">
   <header class="topbar">
     <a class="brand" href="/">ChatStory</a>
-    <nav class="nav"><a class="active" href="/chat-wrapped">Chat Wrapped</a><a href="/dashboard">Dashboard</a><a href="/share/wrapped/{{ job_id }}">Story Card</a>{% if not unlocked %}<a href="/unlock/chat-wrapped/{{ job_id }}">Unlock</a>{% else %}<a href="{{ download_links.pdf }}">Download PDF</a>{% endif %}</nav>
+    <nav class="nav"><a href="/chat-wrapped">New Wrapped</a><a href="/">Home</a></nav>
   </header>
 
-  <section class="hero">
-    <div class="eyebrow">Wrapped story</div>
-    <h1>Your relationship has a shape.</h1>
-    <p class="lead" id="range">Loading processed analytics...</p>
+  <section id="root" class="wrap">
+    <div class="card"><p class="muted">Loading your Wrapped…</p></div>
   </section>
-
-  {% if unlocked %}
-  <section class="card" style="margin-bottom:16px">
-    <div class="eyebrow">Unlocked export</div>
-    <h2>Download your Chat Wrapped PDF</h2>
-    <p class="muted">Your payment was approved. The PDF downloads to your device — it is not shown in the browser tab.</p>
-    <div class="chip-row" style="margin-top:12px">
-      <a class="btn primary" href="{{ download_links.pdf }}">Download PDF</a>
-      <a class="btn secondary" href="/download/chat-wrapped/{{ job_id }}">All download options</a>
-    </div>
-  </section>
-  {% endif %}
-  <section class="card paywall" id="paywall" style="display:none;margin-bottom:16px"></section>
-  <section class="grid-3" id="stats"></section>
-  <section class="grid-2" style="margin-top:16px">
-    <div class="card"><div class="eyebrow">Heatmap</div><h2>Active hours</h2><div class="heatmap" id="heatmap" style="margin-top:16px"></div></div>
-    <div class="card"><div class="eyebrow">Emotional insights</div><h2 id="tone">Reading tone</h2><p class="muted" id="emotion"></p><div class="chip-row" id="starters"></div></div>
-    <div class="card"><div class="eyebrow">Emoji analytics</div><h2>Most-used emojis</h2><div class="chip-row" id="emojis"></div></div>
-    <div class="card"><div class="eyebrow">Shared vocabulary</div><h2>Words you both use</h2><div class="chip-row" id="words"></div></div>
-  </section>
-  <div id="error-box"></div>
 </main>
 
 <script>
 const jobId = "{{ job_id }}";
-fetch(`/api/chat-wrapped/result/${jobId}`).then(r => {
-  if (!r.ok) throw new Error('Wrapped result is not ready');
-  return r.json();
-}).then(payload => render(payload.locked ? payload.preview : payload.data, payload.locked)).catch(err => {
-  document.getElementById('error-box').innerHTML = `<div class="error">${err.message}</div>`;
-});
+const downloadPdf = "{{ download_links.pdf }}";
+const unlockUrl = "{{ download_links.unlock }}";
+const root = document.getElementById('root');
 
-function render(data, locked) {
-  if (locked) {
-    renderLocked(data);
-  } else {
-    const headline = data.cinematic_headline ? `${data.cinematic_headline}` : '';
-    document.getElementById('range').textContent = headline || `${fmtDate(data.first_message_at)} to ${fmtDate(data.last_message_at)} · ${data.detected_format}`;
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+async function load(){
+  try {
+    const resp = await fetch(`/api/chat-wrapped/result/${jobId}`);
+    if (!resp.ok){ root.innerHTML = '<div class="card"><p class="muted">Result not ready yet. <a href="/processing/chat-wrapped/'+jobId+'">Check progress →</a></p></div>'; return; }
+    const payload = await resp.json();
+    if (payload.locked) renderLocked(payload.preview);
+    else renderFull(payload.data);
+  } catch(e){
+    root.innerHTML = '<div class="card"><div class="error">'+esc(e.message)+'</div></div>';
   }
-  document.getElementById('stats').innerHTML = [
-    ['Messages', data.total_messages],
-    ['Active days', data.active_days],
-    ['Persona', data.persona?.name || 'Locked'],
-    ['Locked details', locked ? 'Hidden' : data.media_count],
-    ['Teasers', (data.teasers || []).length],
-    ['Unlock', locked ? '₹50' : 'Done'],
-  ].map(([label, value]) => `<div class="stat"><div class="num">${format(value)}</div><div class="label">${label}</div></div>`).join('');
-
-  if (locked) return;
-  document.getElementById('tone').textContent = data.emotional_insights.tone || 'How you show up for each other';
-  document.getElementById('emotion').textContent = data.emotional_insights.why;
-  renderViral(data.viral_moments || {});
-  document.getElementById('starters').innerHTML = Object.entries(data.conversation_starters.counts || {})
-    .map(([k, v]) => `<span class="chip">${k}: ${v}</span>`).join('');
-  document.getElementById('emojis').innerHTML = (data.emoji_frequency || []).slice(0, 12)
-    .map(e => `<span class="chip">${e.emoji} ${e.count}</span>`).join('') || '<span class="muted">No emojis detected.</span>';
-  document.getElementById('words').innerHTML = (data.shared_vocabulary || []).slice(0, 18)
-    .map(w => `<span class="chip">${w.word} · ${w.count}</span>`).join('') || '<span class="muted">No shared vocabulary crossed the threshold.</span>';
-  renderHeatmap(data.heatmap?.hour_totals || {});
-  renderArc(data.relationship_arc || []);
-  renderClock(data.emotional_clock || {});
 }
 
-function renderViral(viral) {
-  if (!viral.most_human_moment) return;
-  const block = document.createElement('section');
-  block.className = 'card';
-  block.style.marginTop = '16px';
-  const m = viral.most_human_moment;
-  block.innerHTML = `<div class="eyebrow">Most human moment</div><h2>The line that sounds like you</h2><p class="muted">“${m.quote}” — ${m.sender}</p><p>${m.why}</p>${viral.movie_tagline ? `<p class="muted" style="margin-top:8px">${viral.movie_tagline}</p>` : ''}`;
-  document.querySelector('.shell').insertBefore(block, document.getElementById('stats'));
+function cover(c){
+  c = c||{};
+  return `<div class="cover-card">
+    <div class="label">Chat Wrapped</div>
+    <h1>${esc(c.title||'Your ChatWrapped')}</h1>
+    <div class="names">${esc(c.names||'')}</div>
+    <div class="range">${esc(c.date_range||'')}</div>
+    <div class="intro">${esc(c.intro||'')}</div>
+  </div>`;
 }
 
-function renderArc(arc) {
-  if (!arc.length) return;
-  const block = document.createElement('section');
-  block.className = 'card';
-  block.style.marginTop = '16px';
-  block.innerHTML = `<div class="eyebrow">Relationship arc</div><h2>How your bond evolved</h2><div class="steps">${arc.map(p => `<div class="step done"><span><strong>${p.title}</strong><br><span class="muted">${p.why}</span></span><span>${p.tone}</span></div>`).join('')}</div>`;
-  document.querySelector('.shell').appendChild(block);
+function statCard(num, lab){ return `<div class="mini"><div class="big">${esc(num)}</div><div class="label">${esc(lab)}</div></div>`; }
+
+function renderLocked(p){
+  const cards = (p.memory_cards||[]).map(c=>`<div class="mini">${esc(c)}</div>`).join('');
+  const teasers = (p.teasers||[]).map(t=>`<div class="pill">${esc(t)}</div>`).join('');
+  root.innerHTML = cover(p.cover)
+   + `<div class="card">
+        <div class="eyebrow">Personality</div>
+        <h2>${esc((p.personality||{}).title||'')}</h2>
+        <p class="muted">${esc((p.personality||{}).why||'')}</p>
+      </div>
+      <div class="cards-grid">
+        ${statCard((p.total_messages||0).toLocaleString(),'Messages')}
+        ${statCard(p.active_days||0,'Active days')}
+        ${statCard(esc((p.most_active_month||{}).label||'—'),'Loudest month')}
+      </div>
+      <div class="cards-grid">${cards}</div>
+      <div class="card" style="text-align:center">
+        <div class="eyebrow">Locked</div>
+        <h2>Unlock the full Wrapped</h2>
+        <p class="muted">Emotional timeline, milestones, care moments, top words, connection meter, then-vs-now, and your generated letter.</p>
+        <div>${teasers}</div>
+        <div class="chip-row" style="justify-content:center;margin-top:16px">
+          <a class="btn primary" href="${unlockUrl}">Unlock &amp; download</a>
+        </div>
+      </div>`;
 }
 
-function renderClock(clock) {
-  const block = document.createElement('section');
-  block.className = 'grid-2';
-  block.style.marginTop = '16px';
-  block.innerHTML = ['vulnerable', 'comfort', 'high_energy', 'deep_conversation'].map(key => {
-    const slot = clock[key] || {};
-    return `<div class="card"><div class="eyebrow">${key.replace('_', ' ')}</div><h2>${slot.label || '—'}</h2><p class="muted">${slot.why || ''}</p></div>`;
-  }).join('');
-  document.querySelector('.shell').appendChild(block);
+function renderFull(d){
+  const parts = [];
+  parts.push(cover(d.cover));
+
+  parts.push(`<div class="cards-grid">
+    ${statCard((d.total_messages||0).toLocaleString(),'Total messages')}
+    ${statCard(d.active_days||0,'Active days')}
+    ${statCard(d.longest_streak_days||0,'Longest streak (days)')}
+    ${statCard(esc((d.most_active_month||{}).label||'—'),'Loudest month')}
+  </div>`);
+
+  const ps = Object.entries(d.messages_per_sender||{}).map(([k,v])=>`<div class="pill">${esc(k)}: ${v.toLocaleString()}</div>`).join('');
+  if (ps) parts.push(`<div class="card"><div class="eyebrow">Who said more</div>${ps}</div>`);
+
+  parts.push(`<div class="card">
+    <div class="eyebrow">Your chat personality</div>
+    <h2>${esc((d.personality||{}).title||'')}</h2>
+    <p class="muted">${esc((d.personality||{}).why||'')}</p>
+    <p class="pill">🎧 ${esc(d.soundtrack||'')}</p>
+  </div>`);
+
+  if (d.emoji && d.emoji.signature){
+    const top = (d.emoji.top||[]).slice(0,8).map(pair=>`<span class="pill">${pair[0]} ${pair[1]}</span>`).join('');
+    parts.push(`<div class="card"><div class="eyebrow">Emoji Wrapped</div>
+      <div class="emoji-big">${d.emoji.signature}</div>
+      <p class="muted">${esc(d.emoji.line||'')}</p>${top}</div>`);
+  }
+
+  if ((d.emotional_timeline||[]).length){
+    const peak = (d.most_active_month||{}).count || 1;
+    const rows = d.emotional_timeline.map(t=>`<div class="meter-row"><div class="name">${esc(t.month)}</div>
+      <div class="meter-bar"><span style="width:${Math.min(100, t.count/peak*100)}%"></span></div>
+      <div class="label">${esc(t.label)}</div></div>`).join('');
+    parts.push(`<div class="card"><div class="eyebrow">Emotional timeline</div>${rows}</div>`);
+  }
+
+  if (d.connection_meter){
+    const rows = Object.entries(d.connection_meter).map(([k,v])=>`<div class="meter-row"><div class="name">${esc(k)}</div><div class="meter-bar"><span style="width:${v}%"></span></div><div class="label">${v}</div></div>`).join('');
+    parts.push(`<div class="card"><div class="eyebrow">Connection meter</div>${rows}</div>`);
+  }
+
+  const words = (d.top_words||[]).slice(0,10).map(pair=>`<span class="pill">${esc(pair[0])} ·${pair[1]}</span>`).join('');
+  const phrases = (d.top_phrases||[]).map(pair=>`<span class="pill">“${esc(pair[0])}” ·${pair[1]}</span>`).join('');
+  const nicks = (d.nicknames||[]).map(nstr=>`<span class="pill">${esc(nstr)}</span>`).join('');
+  if (words||phrases||nicks) parts.push(`<div class="card"><div class="eyebrow">Top words &amp; phrases</div>
+    ${words}${phrases?'<div style="margin-top:8px">'+phrases+'</div>':''}${nicks?'<div style="margin-top:8px"><span class="label">Nicknames</span><br>'+nicks+'</div>':''}</div>`);
+
+  const bm = d.best_moments||{};
+  const q = (m,lab)=> m?`<div class="quote">“${esc(m.text)}”<div class="who">— ${esc(m.sender)} · ${esc(m.date||'')} · ${esc(lab)}</div></div>`:'';
+  const bmHtml = q(bm.first_message,'first message')+q(bm.longest_message,'longest message')+q(bm.sweetest,'sweetest line');
+  if (bmHtml) parts.push(`<div class="card"><div class="eyebrow">Best moments</div>${bmHtml}</div>`);
+
+  if ((d.care_moments||[]).length){
+    const c = d.care_moments.map(m=>q(m,'care')).join('');
+    parts.push(`<div class="card"><div class="eyebrow">Care &amp; comfort</div>${c}</div>`);
+  }
+
+  const ms = d.milestones||{};
+  const order = [['first_miss_you','First “miss you”'],['first_love','First “love you”'],['first_plan','First plan'],['first_apology','First apology'],['first_celebration','First celebration']];
+  const msHtml = order.filter(o=>ms[o[0]]).map(o=>`<div class="quote">“${esc(ms[o[0]].text)}”<div class="who">${esc(o[1])} · ${esc(ms[o[0]].sender)} · ${esc(ms[o[0]].date||'')}</div></div>`).join('');
+  if (msHtml) parts.push(`<div class="card"><div class="eyebrow">Milestones</div>${msHtml}</div>`);
+
+  const r = d.rituals||{};
+  parts.push(`<div class="card"><div class="eyebrow">Chat rituals</div>
+    <span class="pill">☀️ ${r.good_mornings||0} good mornings</span>
+    <span class="pill">🌙 ${r.good_nights||0} good nights</span>
+    <span class="pill">🌃 ${r.night_talks||0} night messages</span>
+    <span class="pill">🔗 ${r.links_shared||0} links</span>
+    <span class="pill">📎 ${r.media_shared||0} media</span></div>`);
+
+  const t = d.then_vs_now||{};
+  if (t.early){
+    const notes = (t.notes||[]).map(nstr=>`<div class="pill">${esc(nstr)}</div>`).join('');
+    parts.push(`<div class="card"><div class="eyebrow">Then vs now</div>
+      <p class="muted">Early: ~${t.early.avg_len} chars, ${t.early.emoji_rate}% emoji · Now: ~${t.now.avg_len} chars, ${t.now.emoji_rate}% emoji</p>${notes}</div>`);
+  }
+
+  if ((d.memory_cards||[]).length){
+    const cards = d.memory_cards.map(c=>`<div class="mini">${esc(c)}</div>`).join('');
+    parts.push(`<div class="card"><div class="eyebrow">Memory cards</div><div class="cards-grid">${cards}</div></div>`);
+  }
+
+  if (d.letter) parts.push(`<div class="card"><div class="eyebrow">A short note</div><p class="letter">${esc(d.letter)}</p></div>`);
+
+  parts.push(`<div class="closing">${esc(d.closing||'')}</div>`);
+  if (downloadPdf) parts.push(`<div class="chip-row" style="justify-content:center"><a class="btn primary" href="${downloadPdf}">Download PDF poster</a><a class="btn secondary" href="/chat-wrapped">Make another</a></div>`);
+
+  root.innerHTML = parts.join('');
 }
 
-function renderLocked(data) {
-  document.getElementById('range').textContent = `${data.total_messages.toLocaleString()} messages · ${data.active_days} active days · persona preview unlocked`;
-  document.getElementById('paywall').style.display = 'block';
-  document.getElementById('paywall').innerHTML = `<div class="eyebrow">Curiosity preview</div><h2>${data.persona?.name || 'A hidden persona'}</h2><p class="muted">${data.persona?.why || 'Unlock to see the full emotional map.'}</p><div class="chip-row">${(data.teasers || []).map(t => `<span class="chip">${t}</span>`).join('')}</div><a class="btn primary" style="margin-top:16px" href="/unlock/chat-wrapped/${jobId}">Unlock full Wrapped · ₹50</a>`;
-  document.querySelectorAll('.grid-2 .card').forEach(card => card.classList.add('locked'));
-}
-
-function renderHeatmap(hours) {
-  const max = Math.max(1, ...Object.values(hours));
-  document.getElementById('heatmap').innerHTML = Array.from({length: 24}, (_, i) => {
-    const count = hours[i] || hours[String(i)] || 0;
-    const alpha = 0.08 + (count / max) * 0.82;
-    return `<div class="cell" title="${i}:00 · ${count}" style="background:rgba(229,9,20,${alpha})"></div>`;
-  }).join('');
-}
-function fmtDate(iso) { return iso ? new Date(iso).toLocaleDateString() : ''; }
-function format(value) { return typeof value === 'number' ? value.toLocaleString() : value; }
+load();
 </script>
 </body>
 </html>

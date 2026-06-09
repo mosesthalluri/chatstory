@@ -31,6 +31,7 @@ def _run_sync(job_id: str, upload_path: Path, output_path: Path) -> dict:
     cfg = Config(
         backend=settings.PDF_CLIPART_BACKEND,
         model=settings.PDF_CLIPART_MODEL,
+        model_path=settings.PDF_CLIPART_MODEL_PATH,
         num_inference_steps=settings.PDF_CLIPART_STEPS,
         max_cliparts_per_page=settings.PDF_CLIPART_MAX_PER_PAGE,
     )

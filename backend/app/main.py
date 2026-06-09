@@ -164,18 +164,17 @@ def _wrapped_preview(data: dict, unlocked: bool) -> dict:
     return {
         "locked": True,
         "preview": {
-            "persona": data.get("persona", {}),
-            "cinematic_headline": data.get("cinematic_headline", ""),
+            "cover": data.get("cover", {}),
+            "personality": data.get("personality", {}),
             "total_messages": data.get("total_messages", 0),
             "active_days": data.get("active_days", 0),
-            "teasers": data.get("teasers", []),
+            "most_active_month": data.get("most_active_month", {}),
+            "memory_cards": data.get("memory_cards", [])[:2],
+            "teasers": [t for t in data.get("teasers", []) if t],
             "payment_status": "locked",
             "locked_sections": [
-                "emotional_clock",
-                "relationship_arc",
-                "inside_jokes",
-                "nicknames",
-                "full heatmap",
+                "emotional_timeline", "milestones", "care_moments",
+                "top_words", "connection_meter", "then_vs_now", "letter",
             ],
         },
     }

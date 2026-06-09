@@ -91,6 +91,32 @@ def _mark(occupied, r0, c0, side):
             occupied[r][c] = True
 
 
+def apply_theme(page: "fitz.Page", content: PageContent, mood, config: Config) -> None:
+    """Give the page a mood: a soft full-page colour wash plus thin accent
+    bands in the top and bottom margins. Low opacities keep page text fully
+    readable. No-op if theming is disabled."""
+    if not getattr(config, "theme_pages", True) or mood is None:
+        return
+    w, h = content.width, content.height
+
+    def rgb01(c):
+        return (c[0] / 255.0, c[1] / 255.0, c[2] / 255.0)
+
+    try:
+        shape = page.new_shape()
+        # Full-page tint wash.
+        shape.draw_rect(fitz.Rect(0, 0, w, h))
+        shape.finish(fill=rgb01(mood.bg), color=None, fill_opacity=mood.tint_opacity)
+        # Decorative bands inside the top/bottom margins (no text there).
+        band = max(6.0, config.page_margin_pt * 0.5)
+        shape.draw_rect(fitz.Rect(0, 0, w, band))
+        shape.draw_rect(fitz.Rect(0, h - band, w, h))
+        shape.finish(fill=rgb01(mood.accent), color=None, fill_opacity=mood.band_opacity)
+        shape.commit(overlay=True)
+    except Exception as exc:
+        log.warning("  page %d: theme apply failed: %s", content.index + 1, exc)
+
+
 def place_cliparts(page: "fitz.Page", content: PageContent,
                    images: list[bytes], config: Config) -> int:
     """Insert each PNG in `images` into a free square on the page.

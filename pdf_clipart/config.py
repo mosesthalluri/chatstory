@@ -58,6 +58,12 @@ class Config:
     # ---- Local diffusers backend ----
     model: str = "sd-turbo"
     """'sd-turbo' (1-2 steps, fastest) or 'sd15-lcm' (SD 1.5 + LCM-LoRA)."""
+    model_path: str = ""
+    """Reuse a model you already have instead of downloading. Either:
+      * a single-file checkpoint (.safetensors/.ckpt) from A1111/ComfyUI, or
+      * a local diffusers folder (contains model_index.json).
+    When set, this overrides `model` for loading. Combine with
+    model='sd15-lcm' to apply LCM-LoRA on top of an SD 1.5 checkpoint."""
     num_inference_steps: int = 2
     """Keep tiny on a GTX 1650: 1-2 for sd-turbo, ~4 for sd15-lcm."""
     guidance_scale: float = 0.0
@@ -82,6 +88,12 @@ class Config:
     """Cap clipart size so it stays a tasteful accent, not a hero image."""
     grid_cell_pt: float = 12.0
     """Resolution of the free-space scan. Smaller = finer but slower."""
+
+    # ---- Theming ----
+    theme_pages: bool = True
+    """Apply a mood-based background tint + accent bands to annotated pages
+    so the whole page looks themed (cute/dark/romantic/calm/…) instead of
+    plain white with stamped clipart. Skipped pages stay untouched."""
 
     # ---- Output ----
     keep_temp_images: bool = False
