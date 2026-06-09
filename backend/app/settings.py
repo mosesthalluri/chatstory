@@ -60,6 +60,14 @@ class Settings(BaseSettings):
     PROJECT_ROOT: Path = PROJECT_ROOT
     STATIC_DIR: Path = STATIC_DIR
 
+    # PDF Clipart (the pdf_clipart pipeline, exposed as a web product)
+    # backend: "local" (Stable Diffusion via diffusers — needs torch on the
+    # server), "api" (remote image service), or "stub" (offline placeholder).
+    PDF_CLIPART_BACKEND: str = "local"
+    PDF_CLIPART_MODEL: str = "sd-turbo"      # or "sd15-lcm"
+    PDF_CLIPART_STEPS: int = 2
+    PDF_CLIPART_MAX_PER_PAGE: int = 2
+
     # Book config
     CHAPTERS_PER_BOOK: int = 8
     PREVIEW_CHAPTERS: int = 1

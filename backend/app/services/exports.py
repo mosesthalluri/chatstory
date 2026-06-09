@@ -30,6 +30,12 @@ def download_links(job_id: str, product: str | None = None) -> dict[str, str]:
             "json": f"/download/gift-engine/{job_id}/json",
             "unlock": f"/unlock/gift-engine/{job_id}",
         }
+    if product == "pdf-clipart":
+        return {
+            "view": f"/pdf-clipart/result/{job_id}",
+            "pdf": f"/download/pdf-clipart/{job_id}/pdf",
+            "unlock": f"/pdf-clipart/result/{job_id}",
+        }
     return {
         "view": f"/job/{job_id}",
         "preview_pdf": f"/download/chatstory/{job_id}/preview",

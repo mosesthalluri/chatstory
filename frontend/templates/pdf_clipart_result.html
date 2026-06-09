@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF Clipart · Result</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main class="shell">
+  <header class="topbar">
+    <a class="brand" href="/">ChatStory</a>
+    <nav class="nav"><a href="/pdf-clipart" class="active">PDF Clipart</a><a href="/">Home</a></nav>
+  </header>
+
+  <section class="hero">
+    <div class="eyebrow">AI illustration</div>
+    <h1>{% if status.state == 'done' %}Your annotated PDF is ready.{% elif status.state == 'failed' %}We couldn't finish this PDF.{% else %}Still working…{% endif %}</h1>
+    <p class="lead">{{ status.message or 'Minimal, flat clipart added to pages with a clear visual theme. Other pages are left unchanged.' }}</p>
+  </section>
+
+  <section class="grid-2">
+    <div class="card">
+      <div class="eyebrow">Download</div>
+      {% if status.state == 'done' %}
+        <h2>Annotated PDF</h2>
+        <p class="muted">Cute, minimal clipart embedded inline. Skipped pages are byte-for-byte unchanged.</p>
+        <div class="chip-row" style="margin-top:16px">
+          <a class="btn primary" href="{{ download_url }}">Download PDF</a>
+          <a class="btn secondary" href="/pdf-clipart">Annotate another</a>
+        </div>
+      {% elif status.state == 'failed' %}
+        <h2>Failed</h2>
+        <div class="error" style="margin-top:12px">{{ status.error or 'Unknown error' }}</div>
+        <div class="chip-row" style="margin-top:16px">
+          <a class="btn primary" href="/pdf-clipart">Try again</a>
+        </div>
+      {% else %}
+        <h2>Processing…</h2>
+        <p class="muted">This page will be ready once generation finishes.
+          <a href="/processing/pdf-clipart/{{ job_id }}">Watch progress →</a></p>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div class="eyebrow">Summary</div>
+      {% if status.stats %}
+      <div class="steps">
+        <div class="step"><span>Pages in document</span><span>{{ status.stats.total_pages }}</span></div>
+        <div class="step"><span>Pages annotated</span><span>{{ status.stats.annotated_pages }}</span></div>
+        <div class="step"><span>Cliparts added</span><span>{{ status.stats.cliparts_added }}</span></div>
+        <div class="step"><span>Pages skipped</span><span>{{ status.stats.skipped_pages }}</span></div>
+        {% if status.stats.failed_pages %}<div class="step"><span>Pages failed</span><span>{{ status.stats.failed_pages }}</span></div>{% endif %}
+        <div class="step"><span>Time</span><span>{{ status.stats.seconds }}s</span></div>
+      </div>
+      {% else %}
+      <p class="muted">Stats appear here when the job finishes.</p>
+      {% endif %}
+      <p class="muted" style="margin-top:12px">Job ID: <code>{{ job_id }}</code></p>
+    </div>
+  </section>
+</main>
+</body>
+</html>

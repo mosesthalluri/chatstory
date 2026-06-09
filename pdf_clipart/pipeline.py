@@ -19,6 +19,7 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable, Optional
 
 import fitz
 
@@ -55,10 +56,16 @@ def annotate_pdf(
     output_path: str | Path,
     config: Config | None = None,
     backend: ImageBackend | None = None,
+    progress_callback: Optional[Callable[[int, int, "PageResult"], None]] = None,
 ) -> RunSummary:
     """Produce a new PDF with content-aware clipart added.
 
     Skipped/unwarranted pages are left byte-for-byte unchanged.
+
+    `progress_callback(page_index, total_pages, result)` is invoked after
+    each page (1-based index) so callers — e.g. a web job — can report
+    progress. Exceptions from the callback are swallowed so they never
+    abort the run.
     """
     config = config or Config()
     input_path = Path(input_path)
@@ -74,6 +81,14 @@ def annotate_pdf(
     cliparts_added = 0
     annotated_pages = 0
     failed = 0
+
+    def notify(idx: int, tot: int, res: "PageResult") -> None:
+        if progress_callback is None:
+            return
+        try:
+            progress_callback(idx, tot, res)
+        except Exception:
+            pass  # progress reporting must never break the run
 
     doc = fitz.open(input_path)
     total = doc.page_count
@@ -91,6 +106,7 @@ def annotate_pdf(
                 if not want:
                     log.info("[page %d/%d] skip — %s", i + 1, total, reason)
                     results.append(PageResult(i, False, reason))
+                    notify(i + 1, total, results[-1])
                     continue
 
                 prompts = decision.build_prompts(content.text, hits, config)
@@ -119,6 +135,7 @@ def annotate_pdf(
                 if placed:
                     annotated_pages += 1
                 results.append(PageResult(i, True, reason, placed=placed))
+                notify(i + 1, total, results[-1])
                 # Drop page-local image bytes promptly.
                 del pngs
 
@@ -127,6 +144,7 @@ def annotate_pdf(
                 log.exception("[page %d/%d] FAILED: %s — leaving page unchanged",
                               i + 1, total, exc)
                 results.append(PageResult(i, False, "error", error=str(exc)))
+                notify(i + 1, total, results[-1])
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         # garbage_collect + deflate keeps the output size reasonable.

@@ -28,19 +28,28 @@
   <section class="grid-2">
     <label class="drop-zone card" id="drop-zone">
       <span>
-        <strong id="drop-text">Drop your chat export here</strong><br>
-        <span class="muted">or tap to choose. WhatsApp TXT/ZIP, Instagram JSON/ZIP, Telegram JSON. Max {{ max_size_mb }}MB.</span>
+        <strong id="drop-text">{% if product.accept == ".pdf" %}Drop your PDF here{% else %}Drop your chat export here{% endif %}</strong><br>
+        <span class="muted">{% if product.accept == ".pdf" %}or tap to choose a PDF. Max {{ max_size_mb }}MB.{% else %}or tap to choose. WhatsApp TXT/ZIP, Instagram JSON/ZIP, Telegram JSON. Max {{ max_size_mb }}MB.{% endif %}</span>
       </span>
-      <input type="file" id="file-input" accept=".txt,.json,.zip">
+      <input type="file" id="file-input" accept="{{ product.accept or '.txt,.json,.zip' }}">
     </label>
     <aside class="card">
       <div class="eyebrow">Pipeline</div>
+      {% if product.accept == ".pdf" %}
+      <h2>One page at a time.</h2>
+      <div class="steps">
+        <div class="step active"><span>Read each page</span><span>01</span></div>
+        <div class="step"><span>Decide &amp; generate clipart</span><span>02</span></div>
+        <div class="step"><span>Embed &amp; save PDF</span><span>03</span></div>
+      </div>
+      {% else %}
       <h2>Parser first. AI last.</h2>
       <div class="steps">
         <div class="step active"><span>Parse export</span><span>01</span></div>
         <div class="step"><span>Compute signals</span><span>02</span></div>
         <div class="step"><span>Render dashboard</span><span>03</span></div>
       </div>
+      {% endif %}
       <div id="error-box"></div>
     </aside>
   </section>
@@ -52,6 +61,7 @@ const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 const errorBox = document.getElementById('error-box');
 const dropText = document.getElementById('drop-text');
+const initialDropText = dropText.textContent;
 
 ['dragenter', 'dragover'].forEach(ev => dropZone.addEventListener(ev, e => {
   e.preventDefault();
@@ -81,7 +91,7 @@ async function upload(file) {
     window.location.href = data.status_url;
   } catch (err) {
     errorBox.innerHTML = `<div class="error">${err.message}</div>`;
-    dropText.textContent = 'Drop your chat export here';
+    dropText.textContent = initialDropText;
     fileInput.disabled = false;
   }
 }

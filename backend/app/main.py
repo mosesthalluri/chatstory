@@ -32,6 +32,7 @@ from .pipeline.orchestrator import run_pipeline, retry_render
 from .services import auth, jobs, payments
 from .services.chat_wrapped import run_chat_wrapped_pipeline
 from .services.gift_engine import run_gift_engine_pipeline
+from .services.pdf_clipart_service import run_pdf_clipart_pipeline
 from .services.queue import job_queue
 from .services import exports as export_svc
 from .settings import (
@@ -86,6 +87,17 @@ PRODUCTS = {
         "api_status": "/api/gift-engine/status",
         "result_path": "/gift-engine/results",
     },
+    "pdf-clipart": {
+        "title": "PDF Clipart",
+        "kicker": "AI illustration",
+        "description": "Upload a PDF and get it back with cute, minimal AI clipart added to pages that have a clear visual theme.",
+        "api_upload": "/api/pdf-clipart/upload",
+        "api_status": "/api/pdf-clipart/status",
+        "result_path": "/pdf-clipart/result",
+        "accept": ".pdf",
+        "upload_hint": "Drop a PDF here — or tap to choose. Max {max}MB.",
+        "free": True,
+    },
     # ChatStory uses the legacy /job status page rather than the generic
     # /processing page, but it still needs an entry here so the shared
     # /unlock/{slug} and /download/{slug} hub routes resolve instead of 404.
@@ -116,8 +128,16 @@ def _require_admin(request: Request) -> dict:
     return user
 
 
+def _is_free_product(job_id: str) -> bool:
+    status = jobs.load(job_id)
+    product = status.product if status else None
+    return bool(product and PRODUCTS.get(product, {}).get("free"))
+
+
 def _has_unlock(request: Request, job_id: str) -> bool:
     if _is_admin(request):
+        return True
+    if _is_free_product(job_id):
         return True
     return export_svc.is_unlocked(job_id)
 
@@ -317,6 +337,12 @@ async def gift_engine_page(request: Request):
     return template.render(product=PRODUCTS["gift-engine"], max_size_mb=settings.MAX_UPLOAD_SIZE_MB, user=_current_user(request))
 
 
+@app.get("/pdf-clipart", response_class=HTMLResponse)
+async def pdf_clipart_page(request: Request):
+    template = ui_env.get_template("product_upload.html")
+    return template.render(product=PRODUCTS["pdf-clipart"], max_size_mb=settings.MAX_UPLOAD_SIZE_MB, user=_current_user(request))
+
+
 @app.get("/chatstory-coming-soon", response_class=HTMLResponse)
 async def chatstory_coming_soon(request: Request):
     if _is_admin(request):
@@ -456,6 +482,7 @@ async def admin_retry_job(request: Request, job_id: str):
     runners = {
         "chat-wrapped": run_chat_wrapped_pipeline,
         "gift-engine": run_gift_engine_pipeline,
+        "pdf-clipart": run_pdf_clipart_pipeline,
         "chatstory": run_pipeline,
     }
     fn = runners.get(product, run_pipeline)
@@ -620,6 +647,50 @@ async def gift_engine_upload(request: Request, file: UploadFile = File(...)):
 @app.get("/api/gift-engine/status/{job_id}")
 async def gift_engine_status(request: Request, job_id: str):
     return _job_status_payload(request, job_id)
+
+
+@app.post("/api/pdf-clipart/upload")
+async def pdf_clipart_upload(request: Request, file: UploadFile = File(...)):
+    contents = await _read_upload(file)
+    if not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(400, "Please upload a PDF file.")
+    job_id, upload_path = _save_upload(
+        contents,
+        file.filename,
+        user_email=_user_email(request),
+        product="pdf-clipart",
+    )
+    await _enqueue_pipeline(job_id, "pdf-clipart", run_pdf_clipart_pipeline, upload_path)
+    return {
+        "job_id": job_id,
+        "status_url": f"/processing/pdf-clipart/{job_id}",
+        "result_url": f"/pdf-clipart/result/{job_id}",
+    }
+
+
+@app.get("/api/pdf-clipart/status/{job_id}")
+async def pdf_clipart_status(request: Request, job_id: str):
+    return _job_status_payload(request, job_id)
+
+
+@app.get("/pdf-clipart/result/{job_id}", response_class=HTMLResponse)
+async def pdf_clipart_result(request: Request, job_id: str):
+    s = jobs.load(job_id)
+    if s is None:
+        raise HTTPException(404, "Job not found")
+    return ui_env.get_template("pdf_clipart_result.html").render(
+        job_id=job_id,
+        status=s.to_dict(),
+        download_url=f"/download/pdf-clipart/{job_id}/pdf",
+    )
+
+
+@app.get("/download/pdf-clipart/{job_id}/pdf")
+async def download_pdf_clipart(job_id: str):
+    path = export_svc.resolve_pdf_path(job_id, "preview_pdf")
+    if path is None:
+        raise HTTPException(404, "Annotated PDF not ready yet")
+    return _pdf_attachment(path, "annotated.pdf")
 
 
 @app.get("/download/gift-engine/{job_id}/pdf")

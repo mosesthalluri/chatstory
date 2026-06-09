@@ -90,6 +90,31 @@ annotate_pdf("in.pdf", "out.pdf", Config(backend="stub", max_cliparts_per_page=1
 - If you still hit OOM, close other GPU apps, or try `--model sd15-lcm`
   with `--steps 4`.
 
+## Use it from the ChatStory web app
+
+This module is also wired into the FastAPI app as the **PDF Clipart** product
+(homepage card → upload a PDF → progress page → download the annotated PDF,
+free, no paywall). To enable it on the server, install this module's deps
+into the backend's environment too:
+
+```bash
+pip install -r pdf_clipart/requirements.txt
+# plus torch (CUDA build) if PDF_CLIPART_BACKEND=local
+```
+
+Configure via the backend `.env`:
+
+```ini
+PDF_CLIPART_BACKEND=local   # local | api | stub
+PDF_CLIPART_MODEL=sd-turbo  # or sd15-lcm
+PDF_CLIPART_STEPS=2
+PDF_CLIPART_MAX_PER_PAGE=2
+```
+
+If torch/diffusers aren't installed, set `PDF_CLIPART_BACKEND=stub` to demo
+the flow without a GPU. A missing dependency fails that one job with a clear
+message — it never crashes the server.
+
 ## Configurable / swappable
 
 Everything in [`config.py`](config.py) is tunable: max cliparts per page,
