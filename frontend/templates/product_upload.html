@@ -13,7 +13,9 @@
     <a class="brand" href="/">ChatStory</a>
     <nav class="nav">
       <a href="/chat-wrapped" {% if product.title == "Chat Wrapped" %}class="active"{% endif %}>Chat Wrapped</a>
-      <a href="/gift-engine" {% if product.title != "Chat Wrapped" %}class="active"{% endif %}>Gift Engine</a>
+      <a href="/gift-engine" {% if "Gift" in product.title %}class="active"{% endif %}>Gift Engine</a>
+      <a href="/pdf-clipart" {% if "Clipart" in product.title %}class="active"{% endif %}>PDF Clipart</a>
+      <a href="/chatstory" {% if "ChatStory" in product.title %}class="active"{% endif %}>ChatStory</a>
       {% if user and user.role == "admin" %}<a href="/admin">Admin</a>{% endif %}
       {% if user %}<a href="/dashboard">Dashboard</a><a href="/logout">Logout</a>{% else %}<a href="/login">Login</a>{% endif %}
     </nav>
@@ -41,6 +43,13 @@
         <div class="step active"><span>Read each page</span><span>01</span></div>
         <div class="step"><span>Decide &amp; generate clipart</span><span>02</span></div>
         <div class="step"><span>Embed &amp; save PDF</span><span>03</span></div>
+      </div>
+      {% elif "ChatStory" in product.title %}
+      <h2>Chat in. Story out.</h2>
+      <div class="steps">
+        <div class="step active"><span>Parse export</span><span>01</span></div>
+        <div class="step"><span>Write chapters</span><span>02</span></div>
+        <div class="step"><span>Illustrate &amp; render book</span><span>03</span></div>
       </div>
       {% else %}
       <h2>Parser first. AI last.</h2>

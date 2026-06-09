@@ -344,6 +344,15 @@ async def pdf_clipart_page(request: Request):
     return template.render(product=PRODUCTS["pdf-clipart"], max_size_mb=settings.MAX_UPLOAD_SIZE_MB, user=_current_user(request))
 
 
+@app.get("/chatstory", response_class=HTMLResponse)
+async def chatstory_page(request: Request):
+    # First-class uploader for the ChatStory storybook (was previously only
+    # reachable by admins via the beta page). Posts to /api/upload and lands
+    # on the /job status page.
+    template = ui_env.get_template("product_upload.html")
+    return template.render(product=PRODUCTS["chatstory"], max_size_mb=settings.MAX_UPLOAD_SIZE_MB, user=_current_user(request))
+
+
 @app.get("/chatstory-coming-soon", response_class=HTMLResponse)
 async def chatstory_coming_soon(request: Request):
     if _is_admin(request):
