@@ -27,6 +27,11 @@ p { color: #c9cbd6; font-size: 9.5pt; line-height: 1.5; margin: 0 0 3mm; }
 .why { color: #d8dae3; }
 .quote { font-style: italic; color: #9aa0b4; border-left: 2px solid #e50914; padding-left: 4mm; margin: 3mm 0; font-size: 9pt; }
 .meta { font-size: 7.5pt; color: #6d7280; text-transform: uppercase; letter-spacing: .08em; }
+.badge { display:inline-block; background:#e50914; color:#fff; border-radius:999px; padding:1.5mm 3mm; font-size:8pt; font-weight:800; }
+.chip { display:inline-block; background:rgba(255,255,255,.08); color:#d8dae3; border-radius:999px; padding:1.5mm 3mm; margin:1.5mm 1.5mm 0 0; font-size:8pt; }
+.bundle { margin-top:4mm; padding:4mm 5mm; border:1px solid rgba(255,255,255,.12); border-radius:3mm; background:rgba(255,255,255,.04); page-break-inside:avoid; }
+.bundle h3 { margin:0 0 1mm; font-size:11pt; color:#fff; }
+.bundle .items { color:#c9cbd6; font-size:8.5pt; margin-top:2mm; }
 </style>
 </head>
 <body>
@@ -36,15 +41,32 @@ p { color: #c9cbd6; font-size: 9.5pt; line-height: 1.5; margin: 0 0 3mm; }
   <h1>Gifts your chat actually supports</h1>
   <p>{{ gifts.senders|join(' & ') }} · Each card includes a real supporting quote.</p>
 </section>
+
+{% if gifts.bundles %}
+<section class="page">
+  <p class="eyebrow">Gift bundles</p>
+  <h1>Think in themes, not products</h1>
+  {% for b in gifts.bundles %}
+  <div class="bundle">
+    <h3>{{ b.name }} <span class="badge">{{ b.confidence }}%</span></h3>
+    <p class="meta">{{ b.blurb }}</p>
+    <div class="items">{% for it in b['items'] %}• {{ it.title }}<br>{% endfor %}</div>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
 {% for idea in picks %}
 <section class="page">
   <p class="eyebrow">{{ idea.gift_type|replace('_',' ') }} · {{ idea.budget|replace('_',' ') }}</p>
   <h2>{{ idea.title }}</h2>
   <div class="gift-card">
+    {% if idea.confidence %}<p><span class="badge">{{ idea.confidence }}% match</span>{% if idea.references %} <span class="meta">based on {{ idea.references }} chat references</span>{% endif %}</p>{% endif %}
     <p class="why"><strong>Why:</strong> {{ idea.reason }}</p>
     {% if idea.quote %}
     <p class="quote">“{{ idea.quote }}”<br><span class="meta">— {{ idea.quote_sender }}</span></p>
     {% endif %}
+    {% if idea.types %}<div>{% for t, v in idea.types.items() %}{% if v >= 50 %}<span class="chip">{{ t|capitalize }} {{ v }}</span>{% endif %}{% endfor %}</div>{% endif %}
   </div>
 </section>
 {% endfor %}

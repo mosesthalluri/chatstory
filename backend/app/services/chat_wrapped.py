@@ -248,6 +248,285 @@ def _clamp(v: float, lo: int = 5, hi: int = 100) -> int:
 
 
 # --------------------------------------------------------------------------
+# Story layer — topics, eras/arc, categorized moments, people, archetype
+# --------------------------------------------------------------------------
+
+# Life-phase topics. Each maps to trigger words; matched word-boundary so
+# "exam" doesn't fire inside "example".
+TOPIC_LEXICON: dict[str, list[str]] = {
+    "college & exams": ["college", "exam", "exams", "assignment", "assignments",
+                        "semester", "class", "classes", "professor", "marks",
+                        "study", "studying", "lecture", "syllabus", "viva",
+                        "internship", "attendance", "campus", "submission"],
+    "faith & church": ["church", "bible", "prayer", "pray", "praying", "jesus",
+                       "god", "lord", "sermon", "pastor", "worship", "verse",
+                       "faith", "amen", "devotional", "christ", "blessing", "anna"],
+    "work & jobs": ["office", "job", "jobs", "work", "salary", "interview",
+                    "meeting", "boss", "client", "company", "resume", "hiring",
+                    "shift", "career", "intern", "manager"],
+    "food & cravings": ["biryani", "coffee", "tea", "chai", "pizza", "cake",
+                        "dinner", "lunch", "restaurant", "food", "snack", "burger"],
+    "travel & plans": ["trip", "travel", "flight", "train", "goa", "beach",
+                       "mountain", "vacation", "hotel", "journey", "outing"],
+    "family & home": ["mom", "mum", "mummy", "dad", "papa", "family", "sister",
+                      "brother", "akka", "home", "parents", "uncle", "aunty"],
+    "health & rest": ["sick", "fever", "hospital", "doctor", "medicine", "tired",
+                      "sleep", "health", "rest", "headache"],
+    "celebrations": ["birthday", "congrats", "congratulations", "party",
+                     "festival", "christmas", "diwali", "celebrate", "wedding"],
+    "shows & music": ["game", "movie", "song", "songs", "music", "series",
+                      "netflix", "reels", "playlist", "concert"],
+    "love & longing": ["miss", "missing", "love", "baby", "jaan", "cute",
+                       "heart", "babe", "darling"],
+}
+_TOPIC_RE = {name: _compile_phrases(words) for name, words in TOPIC_LEXICON.items()}
+
+
+def _topic_counts(messages: list[Message]) -> Counter:
+    """Total keyword references per topic across messages (word-boundary)."""
+    counts: Counter = Counter()
+    for m in messages:
+        if m.kind != MessageKind.TEXT:
+            continue
+        text = _clean_text(m.text)
+        if not text:
+            continue
+        for name, rx in _TOPIC_RE.items():
+            hits = len(rx.findall(text))
+            if hits:
+                counts[name] += hits
+    return counts
+
+
+def _top_topics(messages: list[Message], k: int = 2) -> list[str]:
+    return [t for t, _ in _topic_counts(messages).most_common(k)]
+
+
+def _eras(messages: list[Message]) -> list[dict]:
+    """Split the timeline into up to 5 contiguous eras of roughly equal
+    message VOLUME (so busy stretches get their own era), and label each by
+    its dominant life-topics. This is the relationship 'arc'."""
+    if len(messages) < 8:
+        return []
+    n = len(messages)
+    k = min(5, max(2, n // 400 + 1))
+    size = n / k
+    eras = []
+    for i in range(k):
+        seg = messages[int(i * size): int((i + 1) * size) if i < k - 1 else n]
+        if not seg:
+            continue
+        topics = _top_topics(seg, 2)
+        night = sum(1 for m in seg if m.timestamp.hour in NIGHT_HOURS) / len(seg)
+        vibe = "late-night" if night >= 0.35 else "daytime"
+        eras.append({
+            "label": f"{seg[0].timestamp.strftime('%b %Y')} – {seg[-1].timestamp.strftime('%b %Y')}",
+            "messages": len(seg),
+            "top_topics": topics or ["everyday life"],
+            "vibe": vibe,
+        })
+    return eras
+
+
+def _arc_narrative(eras: list[dict], senders: list[str], quiet: dict) -> str:
+    if not eras:
+        return ""
+    name_str = " and ".join(senders[:2]) if senders else "you two"
+    first_t = ", ".join(eras[0]["top_topics"][:2])
+    last_t = ", ".join(eras[-1]["top_topics"][:2])
+    parts = [f"In the early days ({eras[0]['label']}), {name_str} mostly talked about {first_t}."]
+    if len(eras) > 2:
+        mid = eras[len(eras) // 2]
+        parts.append(f"Around {mid['label']} the conversation leaned into {', '.join(mid['top_topics'][:2])}.")
+    if last_t and last_t != first_t:
+        parts.append(f"By {eras[-1]['label']}, it had shifted toward {last_t}.")
+    else:
+        parts.append(f"Through {eras[-1]['label']}, {last_t or 'everyday life'} stayed at the center.")
+    if quiet.get("longest_gap_days", 0) >= 7:
+        parts.append(f"There was a {quiet['longest_gap_days']}-day silence along the way — and then you picked right back up.")
+    return " ".join(parts)
+
+
+_EMOTION_WORDS = _compile_phrases([
+    "miss", "missing", "love", "sorry", "scared", "hurt", "proud", "happy",
+    "sad", "cry", "crying", "worried", "grateful", "thank you", "thanks",
+])
+
+
+def _laugh_score(text: str) -> int:
+    low = text.lower()
+    return low.count("haha") + low.count("lol") + text.count("😂") + text.count("🤣") + text.count("😭")
+
+
+def _moment(m: Message, label: str, why: str) -> dict:
+    return {"sender": m.sender, "text": _qtext(m, 220), "date": m.timestamp.date().isoformat(),
+            "label": label, "why": why}
+
+
+def _highlight_moments(messages: list[Message], day_counts: Counter) -> dict:
+    quotable = [m for m in messages if _is_quotable(m) and len(_clean_text(m.text)) >= 8]
+    out: dict[str, dict | None] = {
+        "most_supportive": None, "funniest": None, "most_wholesome": None,
+        "most_emotional": None, "most_chaotic_day": None,
+    }
+    # supportive: care/encouragement, prefer a bit of length (heartfelt)
+    care = [m for m in quotable if CARE_RE.search(_clean_text(m.text)) and len(_clean_text(m.text)) <= 220]
+    if care:
+        out["most_supportive"] = _moment(max(care, key=lambda m: len(_clean_text(m.text))),
+                                         "Most supportive", "the kindest reassurance in the chat")
+    # wholesome: care OR love OR gratitude, short and sweet
+    whole = [m for m in quotable if (CARE_RE.search(_clean_text(m.text)) or LOVE_RE.search(_clean_text(m.text)))
+             and len(_clean_text(m.text)) <= 120]
+    if whole:
+        out["most_wholesome"] = _moment(whole[len(whole) // 2], "Most wholesome", "soft and warm")
+    # funniest: highest laugh score
+    funny = max(quotable, key=lambda m: _laugh_score(m.text), default=None)
+    if funny and _laugh_score(funny.text) >= 1 and len(_clean_text(funny.text)) <= 220:
+        out["funniest"] = _moment(funny, "Funniest", "the one that cracked you up")
+    # most emotional: emotion words + emoji, prefer short punchy
+    emo = [m for m in quotable if _EMOTION_WORDS.search(_clean_text(m.text)) and len(_clean_text(m.text)) <= 160]
+    if emo:
+        out["most_emotional"] = _moment(max(emo, key=lambda m: _laugh_score(m.text) + len(_emojis(m.text))),
+                                       "Most emotional", "raw and real")
+    # most chaotic day: busiest day + a representative line from it
+    if day_counts:
+        d, c = day_counts.most_common(1)[0]
+        rep = next((m for m in quotable if m.timestamp.date().isoformat() == d), None)
+        out["most_chaotic_day"] = {
+            "date": d, "count": c, "label": "Most chaotic day",
+            "why": f"{c:,} messages in a single day",
+            "text": _qtext(rep, 160) if rep else "", "sender": rep.sender if rep else "",
+        }
+    return out
+
+
+def _people_insights(messages: list[Message], senders: list[str]) -> dict:
+    text_msgs = [m for m in messages if m.kind == MessageKind.TEXT]
+    per = {s: {"messages": 0, "chars": 0, "emoji_msgs": 0, "questions": 0,
+               "night": 0, "apologies": 0, "good_mornings": 0} for s in senders}
+
+    def bucket(s):
+        return per.setdefault(s, {"messages": 0, "chars": 0, "emoji_msgs": 0,
+                                  "questions": 0, "night": 0, "apologies": 0, "good_mornings": 0})
+
+    for m in text_msgs:
+        b = bucket(m.sender)
+        t = _clean_text(m.text)
+        b["messages"] += 1
+        b["chars"] += len(t)
+        if _emojis(m.text):
+            b["emoji_msgs"] += 1
+        if t.endswith("?"):
+            b["questions"] += 1
+        if m.timestamp.hour in NIGHT_HOURS:
+            b["night"] += 1
+        if APOLOGY_RE.search(t):
+            b["apologies"] += 1
+        if GM_RE.search(t):
+            b["good_mornings"] += 1
+
+    # conversation initiations (first msg after a 6h+ gap)
+    starters: Counter = Counter()
+    if messages:
+        starters[messages[0].sender] += 1
+    for prev, cur in zip(messages, messages[1:]):
+        if (cur.timestamp - prev.timestamp).total_seconds() >= 6 * 3600:
+            starters[cur.sender] += 1
+
+    def _avg_len(s):
+        b = per[s]
+        return b["chars"] / b["messages"] if b["messages"] else 0
+
+    def _emoji_rate(s):
+        b = per[s]
+        return b["emoji_msgs"] / b["messages"] if b["messages"] else 0
+
+    insights = []
+    if starters:
+        insights.append(f"{starters.most_common(1)[0][0]} starts most conversations.")
+    if len(senders) >= 2:
+        longer = max(senders, key=_avg_len)
+        insights.append(f"{longer} writes the longer messages (~{int(_avg_len(longer))} chars).")
+        emo = max(senders, key=_emoji_rate)
+        insights.append(f"{emo} uses the most emojis.")
+        apo = max(senders, key=lambda s: per[s]["apologies"])
+        if per[apo]["apologies"]:
+            insights.append(f"{apo} is the first to say sorry most often.")
+        gm = max(senders, key=lambda s: per[s]["good_mornings"])
+        if per[gm]["good_mornings"]:
+            insights.append(f"{gm} sends 'good morning' the most.")
+    first_apology = _first_message_matching(messages, APOLOGY_RE)
+    return {
+        "insights": insights,
+        "initiator": starters.most_common(1)[0][0] if starters else None,
+        "per_sender": {s: {"messages": per[s]["messages"], "avg_len": int(_avg_len(s)),
+                           "emoji_rate": int(round(100 * _emoji_rate(s))),
+                           "questions": per[s]["questions"], "night": per[s]["night"]}
+                       for s in senders},
+        "first_apology_by": first_apology["sender"] if first_apology else None,
+    }
+
+
+def _archetype(messages: list[Message], topics: Counter, ratios: dict, moments: dict) -> dict:
+    """A unique, evidence-grounded archetype built from the dominant topic +
+    behaviour pattern (not a single generic axis)."""
+    top_topic = topics.most_common(1)[0][0] if topics else "everyday life"
+    night = ratios["night_ratio"] >= 0.3
+    emoji = ratios["emoji_ratio"] >= 0.4
+    care = ratios["care_ratio"] >= 0.04
+    laugh = ratios["laugh_ratio"] >= 0.15
+    question = ratios["question_ratio"] >= 0.2
+
+    behaviour = ("Night Owls" if night else
+                 "Emoji Chaos Crew" if emoji else
+                 "Comfort Keepers" if care else
+                 "Overthinkers" if question else
+                 "Steady Regulars")
+    topic_word = {
+        "faith & church": "Church-and-Gossip",
+        "college & exams": "Late-Night Study",
+        "work & jobs": "Work-Grind",
+        "love & longing": "Miss-You",
+        "food & cravings": "Foodie",
+        "travel & plans": "Wander",
+        "family & home": "Family-Update",
+        "shows & music": "Binge-and-Banter",
+    }.get(top_topic, "Everyday")
+
+    title = f"The {topic_word} {behaviour}"
+    t2 = topics.most_common(2)
+    topic_str = " and ".join(t for t, _ in t2) if t2 else "everyday life"
+    why_bits = [f"Your conversations keep circling back to {topic_str}"]
+    if night:
+        why_bits.append("most of it after dark")
+    if laugh:
+        why_bits.append("with plenty of laughing")
+    if care:
+        why_bits.append("and a lot of checking in on each other")
+    why = ", ".join(why_bits) + "."
+    evidence = (moments.get("most_wholesome") or moments.get("most_supportive")
+                or moments.get("most_emotional"))
+    return {"title": title, "why": why,
+            "evidence": {"text": evidence["text"], "sender": evidence["sender"]} if evidence else None}
+
+
+def _yearly(messages: list[Message]) -> list[dict]:
+    by_year: dict[int, list[Message]] = defaultdict(list)
+    for m in messages:
+        by_year[m.timestamp.year].append(m)
+    out = []
+    for y in sorted(by_year):
+        seg = by_year[y]
+        out.append({
+            "year": y,
+            "messages": len(seg),
+            "active_days": len({m.timestamp.date() for m in seg}),
+            "top_topic": (_top_topics(seg, 1) or ["everyday life"])[0],
+        })
+    return out
+
+
+# --------------------------------------------------------------------------
 # Main
 # --------------------------------------------------------------------------
 
@@ -460,8 +739,15 @@ def compute_wrapped(
                  "its way back." if gaps else "You barely went a day without talking."),
     }
 
-    # ---- personality + soundtrack ----
-    personality = _personality(ratios)
+    # ---- story layer (arc, moments, people, archetype) ----
+    topics = _topic_counts(messages)
+    moments = _highlight_moments(messages, day_counts)
+    people = _people_insights(messages, senders)
+    eras = _eras(messages)
+    arc_narrative = _arc_narrative(eras, senders, quiet)
+    yearly = _yearly(messages)
+    archetype = _archetype(messages, topics, ratios, moments)
+    personality = archetype  # richer, topic+behaviour grounded (was generic)
     soundtrack = _soundtrack(ratios)
 
     # ---- memory cards (shareable facts) ----
@@ -526,6 +812,12 @@ def compute_wrapped(
         "longest_streak_days": _longest_streak(active_dates),
         "longest_late_night": _longest_late_night(messages),
         # story sections
+        "archetype": archetype,
+        "relationship_arc": {"narrative": arc_narrative, "eras": eras},
+        "topics": topics.most_common(8),
+        "yearly": yearly,
+        "highlight_moments": moments,
+        "people": people,
         "emotional_timeline": timeline,
         "top_words": top_words,
         "top_phrases": top_phrases,

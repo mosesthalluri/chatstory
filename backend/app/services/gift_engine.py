@@ -56,6 +56,39 @@ PATTERNS = {
 
 URL_RE = re.compile(r"https?://\S+", re.I)
 
+# How each category leans across emotional gift types (0-100). Lets the UI
+# show "Sentimental 95 · Funny 40 · Faith 90" so users can choose by feel.
+TYPE_PROFILE: dict[str, dict[str, int]] = {
+    "spiritual": {"faith": 95, "sentimental": 80, "practical": 40, "funny": 10, "romantic": 10},
+    "support":   {"sentimental": 95, "practical": 50, "romantic": 40, "funny": 20, "faith": 20},
+    "stress":    {"practical": 85, "sentimental": 60, "funny": 20, "romantic": 15, "faith": 10},
+    "food":      {"sentimental": 70, "practical": 75, "funny": 40, "romantic": 40, "faith": 5},
+    "music":     {"sentimental": 75, "practical": 55, "funny": 40, "romantic": 45, "faith": 5},
+    "travel":    {"practical": 70, "sentimental": 65, "romantic": 55, "funny": 30, "faith": 5},
+    "hobbies":   {"practical": 80, "sentimental": 55, "funny": 40, "romantic": 20, "faith": 5},
+    "gaming":    {"funny": 80, "practical": 70, "sentimental": 40, "romantic": 15, "faith": 5},
+    "routines":  {"practical": 85, "sentimental": 55, "funny": 25, "romantic": 20, "faith": 5},
+    "inside_joke": {"funny": 90, "sentimental": 80, "practical": 40, "romantic": 30, "faith": 10},
+}
+_DEFAULT_TYPES = {"sentimental": 60, "practical": 60, "funny": 40, "romantic": 30, "faith": 10}
+
+# Themed bundles — people think in themes, not isolated products.
+BUNDLE_DEFS = [
+    ("Faith & Comfort Pack", "For the spiritual heart-to-hearts", {"spiritual", "support"}),
+    ("Late-Night Comfort Bundle", "For the 2am check-ins and tired weeks", {"stress", "routines"}),
+    ("Inside-Joke Box", "Only makes sense if you've read the chat", {"inside_joke"}),
+    ("Shared Cravings & Trips", "The food and travel you already talk about", {"food", "travel"}),
+    ("Hobby & Play Kit", "Fuel for what they actually love doing", {"hobbies", "gaming", "music"}),
+]
+
+# Single common words that are NOT real inside jokes.
+_WEAK_PHRASES = {"alone", "scared", "thanks", "okay", "good", "sorry", "read",
+                 "morning", "night", "love", "miss", "yeah", "nice", "fine"}
+
+
+def _confidence(references: int, evidence_score: float) -> int:
+    return max(40, min(99, int(40 + references * 3 + evidence_score * 4)))
+
 
 def _scan(messages: list[Message], memories: list) -> dict[str, Any]:
     signals = {name: {"score": 0, "examples": [], "keywords": Counter()} for name in PATTERNS}
@@ -73,7 +106,11 @@ def _scan(messages: list[Message], memories: list) -> dict[str, Any]:
         text = suppress_noise(msg.normalized_text or msg.text)
         for url in URL_RE.findall(msg.text):
             if any(host in url.lower() for host in ("spotify", "music", "youtu", "soundcloud")):
-                links.append(url.rstrip(").,")) 
+                links.append(url.rstrip(").,"))
+        # Skip forwards / news / link dumps as gift EVIDENCE — they aren't the
+        # users' own words and produce weak, off-topic supporting quotes.
+        if URL_RE.search(msg.text) or len(msg.text) > 240:
+            continue
         for name, cfg in PATTERNS.items():
             matched = [kw for kw in cfg["keywords"] if kw in text]
             if not matched:
@@ -228,10 +265,19 @@ def _ideas_for(category: str, signal: dict[str, Any], memories: list) -> list[di
 
 def _inside_joke_gifts(phrases: list[dict], messages: list[Message], memories: list) -> list[dict[str, Any]]:
     gifts = []
-    for phrase in [item for item in phrases if item["phrase_type"] == "relationship_specific"][:3]:
+    candidates = [item for item in phrases if item["phrase_type"] == "relationship_specific"]
+    for phrase in candidates:
+        if len(gifts) >= 3:
+            break
+        ph = phrase["phrase"].strip().lower()
+        # Skip generic single common words — a real inside joke is a recurring
+        # multi-word phrase or a distinctive long token, not "alone"/"thanks".
+        if ph in _WEAK_PHRASES or (len(ph.split()) == 1 and len(ph) < 7):
+            continue
         matches = [
             message for message in messages
             if phrase["phrase"] in suppress_noise(message.normalized_text or message.text)
+            and not URL_RE.search(message.text) and len(message.text) <= 240
         ]
         ranked = rank_evidence_messages(matches, {phrase["phrase"]}, memories)
         if not ranked:
@@ -253,18 +299,44 @@ def _inside_joke_gifts(phrases: list[dict], messages: list[Message], memories: l
     return gifts
 
 
+def _build_bundles(all_ideas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    bundles = []
+    for name, blurb, cats in BUNDLE_DEFS:
+        items = [g for g in all_ideas if g["category"] in cats]
+        if items:
+            bundles.append({
+                "name": name, "blurb": blurb,
+                "confidence": max(g.get("confidence", 0) for g in items),
+                "items": [{"title": g["title"], "category": g["category"],
+                           "confidence": g.get("confidence", 0)} for g in items[:4]],
+            })
+    return bundles
+
+
 def compute_gifts(messages: list[Message], detected_format: str, senders: list[str]) -> dict[str, Any]:
     intelligence = build_intelligence(messages, senders)
     scanned = _scan(messages, intelligence.memories)
     signals = scanned["signals"]
     phrases = intelligence.semantic_phrases
 
+    references = {name: sum(data["keywords"].values()) for name, data in signals.items()}
+
     all_ideas: list[dict[str, Any]] = []
     for category, signal in signals.items():
         all_ideas.extend(_ideas_for(category, signal, intelligence.memories))
     all_ideas.extend(_inside_joke_gifts(phrases, messages, intelligence.memories))
     all_ideas = nlp.dedupe_gifts(all_ideas)
-    all_ideas.sort(key=lambda g: -g.get("evidence_score", 0))
+
+    # Annotate each gift with a confidence score, the data behind it, and an
+    # emotional type breakdown so the card feels data-driven, not generic.
+    for idea in all_ideas:
+        refs = references.get(idea["category"], 0)
+        idea["references"] = refs
+        idea["confidence"] = _confidence(refs, idea.get("evidence_score", 0))
+        idea["types"] = TYPE_PROFILE.get(idea["category"], _DEFAULT_TYPES)
+
+    all_ideas.sort(key=lambda g: (-g.get("confidence", 0), -g.get("evidence_score", 0)))
+    bundles = _build_bundles(all_ideas)
 
     grouped = defaultdict(list)
     for idea in all_ideas:
@@ -289,6 +361,11 @@ def compute_gifts(messages: list[Message], detected_format: str, senders: list[s
         },
         "music_links": scanned["music_links"],
         "support_patterns": scanned["support_by_sender"],
+        "bundles": bundles,
+        "confidence_by_category": {
+            name: _confidence(references.get(name, 0), data["score"])
+            for name, data in signals.items() if data["score"] > 0
+        },
         "relationship_intelligence": intelligence.summary(),
         "teasers": [
             "Every gift is tied to a chat quote that passed evidence matching.",

@@ -55,10 +55,17 @@
     <div class="stat"><div class="n" style="font-size:13pt">{{ (d.most_active_month.label if d.most_active_month else "—") }}</div><div class="l">Loudest month</div></div>
   </div>
 
-  <div class="eyebrow">Your chat personality</div>
-  <h2>{{ d.personality.title if d.personality }}</h2>
-  <p>{{ d.personality.why if d.personality }}</p>
+  {% set arch = d.archetype or d.personality %}
+  <div class="eyebrow">Your chat archetype</div>
+  <h2>{{ arch.title if arch }}</h2>
+  <p>{{ arch.why if arch }}</p>
+  {% if arch and arch.evidence %}<div class="quote">“{{ arch.evidence.text }}”<div class="who">— {{ arch.evidence.sender }}</div></div>{% endif %}
   <span class="pill">🎧 {{ d.soundtrack }}</span>
+
+  {% if d.relationship_arc and d.relationship_arc.narrative %}
+  <div class="eyebrow">Your story so far</div>
+  <p class="letter">{{ d.relationship_arc.narrative }}</p>
+  {% endif %}
 
   {% if d.emoji and d.emoji.signature %}
   <div class="eyebrow">Emoji Wrapped</div>
@@ -76,12 +83,17 @@
 
 <!-- Moments + milestones + letter -->
 <div class="page">
-  {% set bm = d.best_moments or {} %}
-  <div class="eyebrow" style="margin-top:0">Best moments</div>
-  {% for key, lab in [('first_message','First message'),('longest_message','Longest message'),('sweetest','Sweetest line')] %}
-    {% set m = bm[key] %}
-    {% if m %}<div class="quote">“{{ m.text }}”<div class="who">— {{ m.sender }} · {{ m.date }} · {{ lab }}</div></div>{% endif %}
+  {% set hm = d.highlight_moments or {} %}
+  <div class="eyebrow" style="margin-top:0">Moments worth screenshotting</div>
+  {% for key in ['most_supportive','most_wholesome','funniest','most_emotional','most_chaotic_day'] %}
+    {% set m = hm[key] %}
+    {% if m %}<div class="quote">{% if m.text %}“{{ m.text }}”{% else %}{{ m.count }} messages in one day{% endif %}<div class="who"><strong>{{ m.label }}</strong>{% if m.sender %} · {{ m.sender }}{% endif %} · {{ m.date }} · {{ m.why }}</div></div>{% endif %}
   {% endfor %}
+
+  {% if d.people and d.people.insights %}
+  <div class="eyebrow">Who's who</div>
+  {% for i in d.people.insights %}<span class="pill">{{ i }}</span>{% endfor %}
+  {% endif %}
 
   {% set ms = d.milestones or {} %}
   {% set order = [('first_miss_you','First “miss you”'),('first_love','First “love you”'),('first_plan','First plan'),('first_apology','First apology'),('first_celebration','First celebration')] %}

@@ -165,7 +165,9 @@ def _wrapped_preview(data: dict, unlocked: bool) -> dict:
         "locked": True,
         "preview": {
             "cover": data.get("cover", {}),
-            "personality": data.get("personality", {}),
+            "personality": data.get("archetype") or data.get("personality", {}),
+            "archetype": data.get("archetype", {}),
+            "arc_teaser": (data.get("relationship_arc", {}).get("narrative", "") or "")[:160],
             "total_messages": data.get("total_messages", 0),
             "active_days": data.get("active_days", 0),
             "most_active_month": data.get("most_active_month", {}),
@@ -173,8 +175,8 @@ def _wrapped_preview(data: dict, unlocked: bool) -> dict:
             "teasers": [t for t in data.get("teasers", []) if t],
             "payment_status": "locked",
             "locked_sections": [
-                "emotional_timeline", "milestones", "care_moments",
-                "top_words", "connection_meter", "then_vs_now", "letter",
+                "relationship arc & eras", "moments worth screenshotting",
+                "who's who insights", "year-by-year", "milestones", "the letter",
             ],
         },
     }

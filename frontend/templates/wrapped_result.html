@@ -82,9 +82,10 @@ function renderLocked(p){
   const teasers = (p.teasers||[]).map(t=>`<div class="pill">${esc(t)}</div>`).join('');
   root.innerHTML = cover(p.cover)
    + `<div class="card">
-        <div class="eyebrow">Personality</div>
+        <div class="eyebrow">Your chat archetype</div>
         <h2>${esc((p.personality||{}).title||'')}</h2>
         <p class="muted">${esc((p.personality||{}).why||'')}</p>
+        ${p.arc_teaser?('<p class="letter" style="font-size:15px">'+esc(p.arc_teaser)+'…</p>'):''}
       </div>
       <div class="cards-grid">
         ${statCard((p.total_messages||0).toLocaleString(),'Messages')}
@@ -117,12 +118,51 @@ function renderFull(d){
   const ps = Object.entries(d.messages_per_sender||{}).map(([k,v])=>`<div class="pill">${esc(k)}: ${v.toLocaleString()}</div>`).join('');
   if (ps) parts.push(`<div class="card"><div class="eyebrow">Who said more</div>${ps}</div>`);
 
+  const arch = d.archetype || d.personality || {};
+  const ev = arch.evidence ? `<div class="quote">“${esc(arch.evidence.text)}”<div class="who">— ${esc(arch.evidence.sender)}</div></div>` : '';
   parts.push(`<div class="card">
-    <div class="eyebrow">Your chat personality</div>
-    <h2>${esc((d.personality||{}).title||'')}</h2>
-    <p class="muted">${esc((d.personality||{}).why||'')}</p>
+    <div class="eyebrow">Your chat archetype</div>
+    <h2>${esc(arch.title||'')}</h2>
+    <p class="muted">${esc(arch.why||'')}</p>
+    ${ev}
     <p class="pill">🎧 ${esc(d.soundtrack||'')}</p>
   </div>`);
+
+  // Relationship arc / eras
+  const arc = d.relationship_arc || {};
+  if (arc.narrative || (arc.eras||[]).length){
+    const eras = (arc.eras||[]).map(e=>`<div class="meter-row"><div class="name">${esc(e.label)}</div>
+      <div class="meter-bar"><span style="width:${Math.min(100, 30+ (e.messages||0)% 70)}%"></span></div>
+      <div class="label">${esc((e.top_topics||[]).slice(0,2).join(' · '))}</div></div>`).join('');
+    parts.push(`<div class="card"><div class="eyebrow">Your story so far</div>
+      <p class="letter" style="font-size:15px">${esc(arc.narrative||'')}</p>${eras}</div>`);
+  }
+
+  // Year by year
+  if ((d.yearly||[]).length > 1){
+    const peak = Math.max(...d.yearly.map(y=>y.messages||0), 1);
+    const rows = d.yearly.map(y=>`<div class="meter-row"><div class="name">${y.year}</div>
+      <div class="meter-bar"><span style="width:${Math.min(100,(y.messages||0)/peak*100)}%"></span></div>
+      <div class="label">${(y.messages||0).toLocaleString()} · ${esc(y.top_topic||'')}</div></div>`).join('');
+    parts.push(`<div class="card"><div class="eyebrow">Year by year</div>${rows}</div>`);
+  }
+
+  // Moments worth screenshotting
+  const hm = d.highlight_moments || {};
+  const mOrder = [['most_supportive','💛'],['most_wholesome','🤗'],['funniest','😂'],['most_emotional','🥺'],['most_chaotic_day','🌪️']];
+  const mHtml = mOrder.filter(o=>hm[o[0]]).map(o=>{
+    const m = hm[o[0]];
+    const body = m.text ? `“${esc(m.text)}”` : `${(m.count||0).toLocaleString()} messages`;
+    return `<div class="quote">${o[1]} <strong>${esc(m.label)}</strong><br>${body}<div class="who">${m.sender?('— '+esc(m.sender)+' · '):''}${esc(m.date||'')} · ${esc(m.why||'')}</div></div>`;
+  }).join('');
+  if (mHtml) parts.push(`<div class="card"><div class="eyebrow">Moments worth screenshotting</div>${mHtml}</div>`);
+
+  // Who's who
+  const ppl = d.people || {};
+  if ((ppl.insights||[]).length){
+    const ins = ppl.insights.map(i=>`<div class="pill">${esc(i)}</div>`).join('');
+    parts.push(`<div class="card"><div class="eyebrow">Who's who</div>${ins}</div>`);
+  }
 
   if (d.emoji && d.emoji.signature){
     const top = (d.emoji.top||[]).slice(0,8).map(pair=>`<span class="pill">${pair[0]} ${pair[1]}</span>`).join('');
