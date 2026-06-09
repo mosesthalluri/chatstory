@@ -37,21 +37,21 @@ _MOODS: list[tuple[str, set[str], Mood]] = [
         "monster", "evil", "grave", "whisper", "whispering", "silence",
     }, Mood("scary", bg=(28, 28, 36), accent=(70, 40, 70),
             tint_opacity=0.16, band_opacity=0.55,
-            prompt_modifier="dark, moody, mysterious, muted shadows, eerie")),
+            prompt_modifier="dark muted palette, moody, a little eerie")),
 
     ("romantic", {
         "love", "loved", "heart", "hearts", "kiss", "romance", "romantic",
         "valentine", "beloved", "darling", "forever", "together", "embrace",
     }, Mood("romantic", bg=(255, 228, 235), accent=(219, 112, 147),
             tint_opacity=0.14, band_opacity=0.5,
-            prompt_modifier="romantic, soft pink and rose, tender, gentle hearts")),
+            prompt_modifier="soft pink palette, tender, warm")),
 
     ("sad", {
         "sad", "cry", "cried", "tears", "lonely", "alone", "grief", "miss",
         "missing", "goodbye", "loss", "lost", "sorrow", "ache", "empty",
     }, Mood("sad", bg=(224, 230, 242), accent=(120, 140, 180),
             tint_opacity=0.14, band_opacity=0.5,
-            prompt_modifier="wistful, soft blue, gentle melancholy, quiet")),
+            prompt_modifier="soft blue palette, gentle, wistful")),
 
     ("calm", {
         "garden", "flower", "flowers", "tree", "trees", "forest", "leaf",
@@ -59,20 +59,20 @@ _MOODS: list[tuple[str, set[str], Mood]] = [
         "river", "meadow", "morning", "quiet", "whispering", "petals", "bloom",
     }, Mood("calm", bg=(226, 242, 230), accent=(122, 158, 122),
             tint_opacity=0.16, band_opacity=0.5,
-            prompt_modifier="calm, soft green, botanical, serene, airy")),
+            prompt_modifier="soft green palette, serene, airy")),
 
     ("happy", {
         "happy", "joy", "joyful", "celebrate", "celebration", "party", "laugh",
         "laughter", "fun", "smile", "sunshine", "bright", "win", "victory",
     }, Mood("happy", bg=(255, 247, 220), accent=(240, 196, 80),
             tint_opacity=0.16, band_opacity=0.5,
-            prompt_modifier="bright, cheerful, sunny, playful, warm")),
+            prompt_modifier="bright warm palette, cheerful, playful")),
 ]
 
 # Default when nothing specific matches.
 _CUTE = Mood("cute", bg=(255, 245, 235), accent=(232, 168, 124),
              tint_opacity=0.14, band_opacity=0.5,
-             prompt_modifier="cute, soft pastel, adorable, friendly")
+             prompt_modifier="soft pastel palette, cute, friendly")
 
 _WORD_RE = re.compile(r"[a-zA-Z']+")
 

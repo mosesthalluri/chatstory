@@ -1206,6 +1206,37 @@ async def _generate_story_from_emotional_arc(
 # ---------------------------------------------------------------------------
 
 
+# Bound the per-chapter LLM work so a long chat stays feasible on modest
+# hardware (GTX 1650). The old two-pass path made one call per ~25-message
+# chunk PLUS one per ~8-message scene — hundreds of Ollama calls for a big
+# chat, which effectively hangs. We now make ONE grounded call per chapter
+# over an evenly-sampled set of messages.
+MAX_MESSAGES_PER_CHAPTER_PROMPT = 60
+
+
+def _sample_messages(messages: list[Message], n: int) -> list[Message]:
+    """Evenly sample up to n messages across the chapter (keeps the start,
+    middle and end rather than only the opening)."""
+    if len(messages) <= n:
+        return messages
+    step = len(messages) / n
+    return [messages[int(i * step)] for i in range(n)]
+
+
+def _deterministic_chapter_body(messages: list[Message]) -> str:
+    """Readable fallback prose built with no LLM — used if the model is
+    unavailable, times out, or returns nothing. Never invents anything."""
+    text_msgs = [m for m in messages if m.kind == MessageKind.TEXT]
+    if not text_msgs:
+        return "This chapter covers a quiet stretch with little written conversation."
+    sample = _sample_messages(text_msgs, 8)
+    when = text_msgs[0].timestamp.strftime("%B %Y")
+    senders = ", ".join(sorted({m.sender for m in text_msgs}))
+    lines = " ".join(f'{m.sender} said, "{m.text.strip()}".' for m in sample if m.text.strip())
+    return (f"Around {when}, the conversation between {senders} carried on. "
+            f"{lines}")
+
+
 async def generate_chapter(
     index: int,
     start_date: date,
@@ -1214,11 +1245,44 @@ async def generate_chapter(
     month_summaries: dict[date, str],
     arc_context: str,
 ) -> Chapter:
-    return await _generate_chapter_with_two_pass(
-        index=index,
-        start_date=start_date,
-        end_date=end_date,
-        chapter_messages=chapter_messages,
-        month_summaries=month_summaries,
-        arc_context=arc_context,
+    """One bounded, grounded LLM call per chapter, with a deterministic
+    fallback so a chapter is ALWAYS produced (never hangs or hard-fails)."""
+    sender_names = {m.sender for m in chapter_messages}
+    entities = _extract_entities(chapter_messages, sender_names)
+    text_msgs = [m for m in chapter_messages if m.kind == MessageKind.TEXT]
+
+    title = _chapter_title_from_messages(index, chapter_messages)
+    when = _chapter_when_from_messages(start_date, end_date, chapter_messages)
+    illo = _illustration_prompt_from_messages(chapter_messages)
+    pull_quote, pull_quote_author = _pick_commentary_quote(chapter_messages)
+
+    if not text_msgs:
+        return Chapter(index, title, when,
+                       "This chapter covers a quiet stretch with little written conversation.",
+                       pull_quote, pull_quote_author, illo)
+
+    sample = _sample_messages(text_msgs, MAX_MESSAGES_PER_CHAPTER_PROMPT)
+    prompt = STORY_GENERATION_WITH_EMOTIONAL_CONTEXT.format(
+        emotional_context="(Write only from the messages below.)",
+        sender_list=", ".join(sorted(sender_names)),
+        entities_block=_build_entities_block(entities) or "(none detected)",
+        formatted_messages=_format_highlights(sample),
     )
+
+    body = ""
+    try:
+        body = await llm.complete(
+            [
+                {"role": "system", "content": (
+                    "You are a romantic novelist writing in third person about a "
+                    "real chat. Use only what the messages show — never invent "
+                    "events, dates, or feelings. Do not use first person.")},
+                {"role": "user", "content": prompt},
+            ],
+            model_size="strong", temperature=0.3, max_tokens=700,
+        )
+    except Exception as exc:  # Ollama down / timeout / API error
+        print(f"[chapter_gen] chapter {index} LLM failed, using fallback: {exc}")
+
+    body = (body or "").strip() or _deterministic_chapter_body(chapter_messages)
+    return Chapter(index, title, when, body, pull_quote, pull_quote_author, illo)

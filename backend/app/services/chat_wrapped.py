@@ -50,7 +50,8 @@ LOVE_PHRASES = ["i love you", "love you", "love u", "ily", "luv u", "luv you"]
 MISS_PHRASES = ["miss you", "miss u", "missing you", "missed you"]
 PLAN_PHRASES = ["let's", "lets ", "let us", "shall we", "plan", "meet up", "meet at",
                 "see you", "catch up", "wanna ", "want to go", "this weekend"]
-APOLOGY_PHRASES = ["sorry", "my bad", "apologi", "forgive me", "didn't mean", "didnt mean"]
+APOLOGY_PHRASES = ["sorry", "my bad", "apologize", "apologies", "apology", "forgive me",
+                   "didn't mean", "didnt mean"]
 CELEBRATE_PHRASES = ["congrats", "congratulations", "happy birthday", "we did it",
                      "got the job", "cleared", "passed", "selected", "promotion",
                      "well done", "proud"]
@@ -70,6 +71,45 @@ who which with from into out up down over only even still much many more most so
 URL_RE = re.compile(r"https?://\S+", re.I)
 _WORD_RE = re.compile(r"[a-zA-Z']+")
 
+# WhatsApp / platform system annotations — these are NOT the users' words and
+# must never appear in quotes, top phrases, or milestones. ("message edited"
+# leaking in as a "signature phrase" is exactly this.)
+_SYSTEM_RE = re.compile(
+    r"<\s*this message was (?:edited|deleted)\s*>"
+    r"|this message was (?:edited|deleted)"
+    r"|you deleted this message"
+    r"|<\s*media omitted\s*>|\bmedia omitted\b"
+    r"|<\s*attached[^>]*>"
+    r"|\blive location\b|location shared"
+    r"|missed (?:voice|video) call"
+    r"|\bnull\b",
+    re.I,
+)
+
+
+def _clean_text(text: str) -> str:
+    """Strip system annotations and collapse whitespace."""
+    if not text:
+        return ""
+    return re.sub(r"\s+", " ", _SYSTEM_RE.sub(" ", text)).strip()
+
+
+def _compile_phrases(phrases: list[str]) -> "re.Pattern":
+    """Word-boundary matcher for a phrase list. Word boundaries stop false
+    positives like 'ily' matching inside 'easily' / 'Daily'."""
+    parts = sorted({p.strip() for p in phrases if p.strip()}, key=len, reverse=True)
+    return re.compile(r"\b(?:" + "|".join(re.escape(p) for p in parts) + r")\b", re.I)
+
+
+CARE_RE = _compile_phrases(CARE_PHRASES)
+LOVE_RE = _compile_phrases(LOVE_PHRASES)
+MISS_RE = _compile_phrases(MISS_PHRASES)
+PLAN_RE = _compile_phrases(PLAN_PHRASES)
+APOLOGY_RE = _compile_phrases(APOLOGY_PHRASES)
+CELEBRATE_RE = _compile_phrases(CELEBRATE_PHRASES)
+GM_RE = _compile_phrases(GM_PHRASES)
+GN_RE = _compile_phrases(GN_PHRASES)
+
 
 # --------------------------------------------------------------------------
 # Helpers
@@ -80,17 +120,17 @@ def _is_quotable(m: Message) -> bool:
     link, not system noise."""
     if m.kind != MessageKind.TEXT:
         return False
-    text = (m.text or "").strip()
-    if not text or URL_RE.search(text):
+    raw = (m.text or "").strip()
+    if not raw or URL_RE.search(raw):
         return False
-    if nlp.is_noise_message(text):
-        return False
-    # media-ish placeholders that slipped through
-    low = text.lower()
-    if any(tag in low for tag in ("<media", "omitted", "this message was deleted",
-                                  "missed voice call", "missed video call")):
+    text = _clean_text(raw)
+    if len(text) < 2 or nlp.is_noise_message(text):
         return False
     return True
+
+
+def _qtext(m: Message, limit: int = 200) -> str:
+    return _clean_text(m.text)[:limit]
 
 
 def _tokens(text: str) -> list[str]:
@@ -104,26 +144,19 @@ def _emojis(text: str) -> list[str]:
         return []
 
 
-def _first_message_matching(messages: list[Message], phrases: list[str]) -> dict | None:
+def _first_message_matching(messages: list[Message], regex: "re.Pattern") -> dict | None:
     for m in messages:
         if not _is_quotable(m):
             continue
-        low = m.text.lower()
-        if any(p in low for p in phrases):
-            return {"sender": m.sender, "text": m.text[:200],
+        if regex.search(_clean_text(m.text)):
+            return {"sender": m.sender, "text": _qtext(m),
                     "date": m.timestamp.date().isoformat()}
     return None
 
 
-def _count_matching(messages: list[Message], phrases: list[str]) -> int:
-    n = 0
-    for m in messages:
-        if m.kind != MessageKind.TEXT:
-            continue
-        low = (m.text or "").lower()
-        if any(p in low for p in phrases):
-            n += 1
-    return n
+def _count_matching(messages: list[Message], regex: "re.Pattern") -> int:
+    return sum(1 for m in messages
+               if m.kind == MessageKind.TEXT and regex.search(_clean_text(m.text or "")))
 
 
 def _longest_streak(active_dates: set) -> int:
@@ -271,7 +304,7 @@ def compute_wrapped(
                 question_msgs += 1
             if "haha" in low or "lol" in low or "😂" in text or "🤣" in text:
                 laugh_msgs += 1
-            if any(p in low for p in CARE_PHRASES):
+            if CARE_RE.search(_clean_text(text)):
                 care_msgs += 1
 
     text_n = max(len(text_messages), 1)
@@ -314,14 +347,20 @@ def compute_wrapped(
     word_counter: Counter = Counter()
     bigram_counter: Counter = Counter()
     for m in quotable:
-        toks = [t for t in _tokens(m.text) if t not in STOPWORDS and len(t) > 2]
+        toks = [t for t in _tokens(_clean_text(m.text)) if t not in STOPWORDS and len(t) > 2]
         word_counter.update(toks)
         for a, b in zip(toks, toks[1:]):
             bigram_counter[f"{a} {b}"] += 1
     top_words = word_counter.most_common(12)
     top_phrases = [(p, c) for p, c in bigram_counter.most_common(20) if c >= 3][:8]
-    greetings = [(g, _count_matching(messages, [g]))
-                 for g in ("good morning", "good night", "lol", "haha", "miss you", "bro")]
+    greeting_defs = [
+        ("good morning", ["good morning", "gm"]),
+        ("good night", ["good night", "gn"]),
+        ("lol", ["lol"]), ("haha", ["haha"]),
+        ("miss you", MISS_PHRASES), ("bro", ["bro"]),
+    ]
+    greetings = [(lab, _count_matching(messages, _compile_phrases(variants)))
+                 for lab, variants in greeting_defs]
     greetings = [(g, c) for g, c in greetings if c > 0]
     try:
         nicknames = nlp.nicknames(messages, senders)[:6]
@@ -334,44 +373,45 @@ def compute_wrapped(
     emoji_share = int(round(100 * emoji_msgs / text_n)) if text_n else 0
 
     # ---- best moments ----
-    first_msg = next(({"sender": m.sender, "text": m.text[:200],
+    first_msg = next(({"sender": m.sender, "text": _qtext(m),
                        "date": m.timestamp.date().isoformat()} for m in quotable), None)
     longest_msg = None
     if quotable:
-        lm = max(quotable, key=lambda m: len(m.text))
-        longest_msg = {"sender": lm.sender, "text": lm.text[:400],
-                       "date": lm.timestamp.date().isoformat(), "length": len(lm.text)}
+        lm = max(quotable, key=lambda m: len(_clean_text(m.text)))
+        longest_msg = {"sender": lm.sender, "text": _qtext(lm, 400),
+                       "date": lm.timestamp.date().isoformat(),
+                       "length": len(_clean_text(lm.text))}
     sweet = None
     sweet_candidates = [m for m in quotable
-                        if any(p in m.text.lower() for p in CARE_PHRASES + LOVE_PHRASES)
-                        and len(m.text) <= 120]
+                        if (CARE_RE.search(_clean_text(m.text)) or LOVE_RE.search(_clean_text(m.text)))
+                        and len(_clean_text(m.text)) <= 120]
     if sweet_candidates:
         s = sweet_candidates[len(sweet_candidates) // 2]
-        sweet = {"sender": s.sender, "text": s.text[:160],
+        sweet = {"sender": s.sender, "text": _qtext(s, 160),
                  "date": s.timestamp.date().isoformat()}
 
     # ---- care moments (a few real examples) ----
     care_examples = []
     for m in quotable:
-        if any(p in m.text.lower() for p in CARE_PHRASES):
-            care_examples.append({"sender": m.sender, "text": m.text[:160],
+        if CARE_RE.search(_clean_text(m.text)):
+            care_examples.append({"sender": m.sender, "text": _qtext(m, 160),
                                   "date": m.timestamp.date().isoformat()})
         if len(care_examples) >= 5:
             break
 
-    # ---- milestones (first occurrences) ----
+    # ---- milestones (first occurrences, word-boundary matched) ----
     milestones = {
-        "first_miss_you": _first_message_matching(messages, MISS_PHRASES),
-        "first_love": _first_message_matching(messages, LOVE_PHRASES),
-        "first_plan": _first_message_matching(messages, PLAN_PHRASES),
-        "first_apology": _first_message_matching(messages, APOLOGY_PHRASES),
-        "first_celebration": _first_message_matching(messages, CELEBRATE_PHRASES),
+        "first_miss_you": _first_message_matching(messages, MISS_RE),
+        "first_love": _first_message_matching(messages, LOVE_RE),
+        "first_plan": _first_message_matching(messages, PLAN_RE),
+        "first_apology": _first_message_matching(messages, APOLOGY_RE),
+        "first_celebration": _first_message_matching(messages, CELEBRATE_RE),
     }
 
     # ---- rituals ----
     rituals = {
-        "good_mornings": _count_matching(messages, GM_PHRASES),
-        "good_nights": _count_matching(messages, GN_PHRASES),
+        "good_mornings": _count_matching(messages, GM_RE),
+        "good_nights": _count_matching(messages, GN_RE),
         "night_talks": night_msgs,
         "links_shared": sum(1 for m in text_messages if URL_RE.search(m.text or "")),
         "media_shared": len(media_messages),
@@ -450,16 +490,23 @@ def compute_wrapped(
         f"{quiet['note']} Mostly, it's proof that someone was there."
     )
 
-    intro = ("A year of late replies, random jokes, comfort, chaos, and memories."
-             if days_span > 200 else
-             "A stretch of small updates, inside jokes, and staying in touch.")
+    span_years = (last_ts.date() - first_ts.date()).days / 365.0
+    if span_years >= 1.5:
+        title = f"Your {first_ts.year}–{last_ts.year} ChatWrapped"
+        intro = "Years of late replies, random jokes, comfort, chaos, and memories."
+    elif days_span > 200:
+        title = f"Your {year} ChatWrapped"
+        intro = "A year of late replies, random jokes, comfort, chaos, and memories."
+    else:
+        title = f"Your {year} ChatWrapped"
+        intro = "A stretch of small updates, inside jokes, and staying in touch."
 
     return {
         "detected_format": detected_format,
         "senders": senders,
         "year": year,
         "cover": {
-            "title": f"Your {year} ChatWrapped",
+            "title": title,
             "names": name_str,
             "date_range": f"{first_ts.date().isoformat()} → {last_ts.date().isoformat()}",
             "intro": intro,

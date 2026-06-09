@@ -106,6 +106,9 @@ async def run_pipeline(job_id: str, upload_path: Path) -> None:
             if phrase["phrase_type"] == "relationship_specific"
         ][:5]
         chat_stats["relationship_intelligence"] = intelligence.summary()
+        # Guarantee JSON-safe (no datetime/dataclass objects) before storing —
+        # otherwise saving the job crashes with "datetime is not serializable".
+        chat_stats = json.loads(json.dumps(chat_stats, default=str))
         jobs.update(job_id, stats=chat_stats)
 
         # 3. Skip compressed summary hierarchy.
@@ -179,12 +182,24 @@ async def run_pipeline(job_id: str, upload_path: Path) -> None:
                 illustration_prompt="A quiet phone on a bedside table",
             ))
         for i, (start, end, msgs) in enumerate(chapter_chunks, 1):
-            ch = await chapter_gen.generate_chapter(
-                index=i, start_date=start, end_date=end,
-                chapter_messages=msgs,
-                month_summaries=month_summaries,
-                arc_context=arc,
-            )
+            try:
+                ch = await chapter_gen.generate_chapter(
+                    index=i, start_date=start, end_date=end,
+                    chapter_messages=msgs,
+                    month_summaries=month_summaries,
+                    arc_context=arc,
+                )
+            except Exception as exc:
+                # One chapter failing must not kill the whole book.
+                print(f"[orchestrator] chapter {i} failed: {exc}")
+                ch = chapter_gen.Chapter(
+                    index=i,
+                    title=f"Chapter {i}",
+                    when=start.strftime("%B %Y") if hasattr(start, "strftime") else "",
+                    body=chapter_gen._deterministic_chapter_body(msgs),
+                    pull_quote="", pull_quote_author="",
+                    illustration_prompt="a quiet phone on a table",
+                )
             chapters.append(ch)
             progress = 78 + int(10 * i / len(chapter_chunks))
             phases[2]["progress"] = int(50 * i / len(chapter_chunks))
