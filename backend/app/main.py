@@ -29,7 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .pipeline.orchestrator import run_pipeline, retry_render
-from .services import auth, jobs, payments
+from .services import auth, jobs, payments, telegram_bot
 from .services.chat_wrapped import run_chat_wrapped_pipeline
 from .services.gift_engine import run_gift_engine_pipeline
 from .services.pdf_clipart_service import run_pdf_clipart_pipeline
@@ -52,7 +52,9 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # never block startup on seeding
         print(f"[startup] admin seed skipped: {exc}")
     await job_queue.start()
+    await telegram_bot.start()  # no-op unless TELEGRAM_* configured
     yield
+    await telegram_bot.stop()
     await job_queue.stop()
 
 
@@ -459,7 +461,24 @@ async def download_hub(request: Request, product_slug: str, job_id: str):
 async def submit_payment(job_id: str, transaction_id: str = Form(...), screenshot: UploadFile | None = File(None)):
     contents = await screenshot.read() if screenshot else None
     record = payments.submit_payment(job_id, transaction_id, contents, screenshot.filename if screenshot else "")
+    # Push to the admin's Telegram for one-tap approval (no-op if not configured).
+    await telegram_bot.send_payment_for_review(
+        record, contents, screenshot.filename if screenshot else "screenshot.jpg")
     return RedirectResponse(f"/unlock/{record['product']}/{job_id}", status_code=303)
+
+
+@app.get("/access", response_class=HTMLResponse)
+async def access_form(request: Request, job_id: str = "", product: str = "chat-wrapped"):
+    return ui_env.get_template("access.html").render(job_id=job_id, product=product, error="")
+
+
+@app.post("/access", response_class=HTMLResponse)
+async def access_submit(request: Request, job_id: str = Form(...), code: str = Form(...), product: str = Form("chat-wrapped")):
+    if payments.check_access(job_id, code):
+        return RedirectResponse(f"/download/{product}/{job_id}", status_code=303)
+    return ui_env.get_template("access.html").render(
+        job_id=job_id, product=product,
+        error="That code isn't valid yet — payment may still be awaiting approval.")
 
 
 @app.get("/admin", response_class=HTMLResponse)

@@ -42,6 +42,21 @@ p { color: #c9cbd6; font-size: 9.5pt; line-height: 1.5; margin: 0 0 3mm; }
   <p>{{ gifts.senders|join(' & ') }} · Each card includes a real supporting quote.</p>
 </section>
 
+{% if gifts.personalized_ideas %}
+<section class="page">
+  <p class="eyebrow">Personalized for you</p>
+  <h1>Ideas made for these two</h1>
+  {% for idea in gifts.personalized_ideas %}
+  <div class="gift-card">
+    <p><span class="badge">{{ idea.confidence }}%</span> <span class="chip">{{ idea.type }}</span>{% if idea.for %} <span class="meta">for {{ idea.for }}</span>{% endif %}</p>
+    <h2>{{ idea.title }}</h2>
+    <p class="why">{{ idea.reason }}</p>
+    {% if idea.quote %}<p class="quote">“{{ idea.quote }}”<br><span class="meta">— {{ idea.quote_sender }}</span></p>{% endif %}
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
 {% if gifts.bundles %}
 <section class="page">
   <p class="eyebrow">Gift bundles</p>

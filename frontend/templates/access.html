@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Access your download · ChatStory</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main class="shell">
+  <header class="topbar"><a class="brand" href="/">ChatStory</a><nav class="nav"><a href="/">Home</a></nav></header>
+  <section class="hero">
+    <div class="eyebrow">Download access</div>
+    <h1>Enter your access code</h1>
+    <p class="lead">After your payment is approved, use the access code you saved to open your downloads — no login needed.</p>
+  </section>
+  <section class="grid-2">
+    <form class="card form" method="post" action="/access">
+      {% if error %}<div class="error" style="margin-bottom:12px">{{ error }}</div>{% endif %}
+      <input name="job_id" placeholder="Job ID" value="{{ job_id }}" required>
+      <input name="code" placeholder="6-character access code" value="" required style="text-transform:uppercase">
+      <input type="hidden" name="product" value="{{ product }}">
+      <button class="btn primary" type="submit">Open my downloads</button>
+    </form>
+    <div class="card">
+      <div class="eyebrow">Where do I find these?</div>
+      <p class="muted">Your <strong>Job ID</strong> and <strong>access code</strong> were shown on the unlock page right after you submitted your payment. If you're signed in, you can also reach downloads from your <a href="/dashboard">dashboard</a>.</p>
+    </div>
+  </section>
+</main>
+</body>
+</html>

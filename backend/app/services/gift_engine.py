@@ -384,6 +384,23 @@ def compute_gifts(messages: list[Message], detected_format: str, senders: list[s
     all_ideas.sort(key=lambda g: (-g.get("confidence", 0), -g.get("evidence_score", 0)))
     bundles = _build_bundles(all_ideas)
 
+    # Real, human, strong-grounded quotes for the LLM personalization pass to
+    # reason over (it cites these by index — it can't invent quotes).
+    evidence_pool: list[dict] = []
+    seen_e: set = set()
+    for name, data in signals.items():
+        if data["strong_refs"] < 1:
+            continue
+        for ex in data["examples"]:
+            t = (ex.get("text") or "").strip()
+            if not (12 <= len(t) <= 200) or t in seen_e:
+                continue
+            if not content_filter.safe_for_display(t):
+                continue
+            seen_e.add(t)
+            evidence_pool.append({"text": t, "sender": ex["sender"], "category": name})
+    evidence_pool = evidence_pool[:24]
+
     grouped = defaultdict(list)
     for idea in all_ideas:
         grouped[idea["budget"]].append(idea)
@@ -407,6 +424,8 @@ def compute_gifts(messages: list[Message], detected_format: str, senders: list[s
         },
         "music_links": scanned["music_links"],
         "support_patterns": scanned["support_by_sender"],
+        "evidence_pool": evidence_pool,
+        "personalized_ideas": [],  # filled by the optional Ollama pass
         "bundles": bundles,
         "confidence_by_category": {
             name: _confidence(data["strong_refs"], data["score"])
@@ -461,8 +480,21 @@ async def run_gift_engine_pipeline(job_id: str, upload_path: Path) -> None:
             compute_gifts, parsed.messages, parsed.detected_format, parsed.senders
         )
         gifts["parser_warnings"] = parsed.parser_warnings
-        # Guarantee the whole structure is JSON-safe (no datetime/Message
-        # objects) before it's stored on the job or written to disk.
+
+        # Optional Ollama personalization — infers who each person is and
+        # proposes creative, person-specific ideas (grounded in real quotes).
+        if settings.GIFT_ENGINE_USE_LLM:
+            jobs.update(job_id, state="generating_gifts", progress=70,
+                        message="Thinking up personal gift ideas…", phases=phases)
+            try:
+                from . import gift_llm
+                gifts["personalized_ideas"] = await gift_llm.personalize_gifts(
+                    parsed.senders, gifts.get("evidence_pool", []))
+            except Exception as exc:
+                print(f"[gift_llm] personalization skipped: {exc}")
+                gifts["personalized_ideas"] = []
+
+        # Guarantee the whole structure is JSON-safe before storing / writing.
         gifts = json.loads(json.dumps(gifts, default=str))
 
         phases[1] = {"name": "Match evidence", "status": "done", "progress": 100}

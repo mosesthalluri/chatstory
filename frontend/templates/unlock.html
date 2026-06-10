@@ -72,6 +72,21 @@
         <h2>Create request first</h2>
         <p class="muted">We collect email before unlock so exports can be tied to your account.</p>
       {% endif %}
+
+      {% if payment and payment.access_code %}
+        <div style="margin-top:14px;padding:12px;border:1px dashed #E8A87C;border-radius:8px">
+          <div class="eyebrow">Your access code</div>
+          <p style="font-size:22px;font-weight:700;letter-spacing:.25em;margin:4px 0">{{ payment.access_code }}</p>
+          <p class="muted">Save this. After approval you can reopen your download anytime at
+            <a href="/access?job_id={{ job_id }}&product={{ product_slug }}">the access page</a> — no login needed.</p>
+        </div>
+      {% endif %}
+      {% if payment and payment.admin_message %}
+        <div style="margin-top:14px;padding:12px;border:1px solid #7B9EA8;border-radius:8px">
+          <div class="eyebrow">Message from us</div>
+          <p>{{ payment.admin_message }}</p>
+        </div>
+      {% endif %}
     </div>
   </section>
 </main>

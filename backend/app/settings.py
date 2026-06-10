@@ -71,6 +71,19 @@ class Settings(BaseSettings):
     PDF_CLIPART_STEPS: int = 2
     PDF_CLIPART_MAX_PER_PAGE: int = 2
 
+    # Gift Engine LLM personalization. Uses the same Ollama/Groq client as
+    # ChatStory to infer each person's interests/skills and suggest creative,
+    # personal gift ideas (grounded in real quotes). Falls back to the
+    # deterministic engine if the model is unavailable.
+    GIFT_ENGINE_USE_LLM: bool = True
+
+    # Telegram payment-approval bot (optional). When both are set, payment
+    # screenshots are pushed to the admin chat with Approve/Reject buttons and
+    # the admin can message the user back. If unset, the /admin web flow is
+    # used instead.
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_ADMIN_CHAT_ID: str = ""
+
     # Book config
     CHAPTERS_PER_BOOK: int = 8
     PREVIEW_CHAPTERS: int = 1

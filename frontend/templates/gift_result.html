@@ -71,6 +71,11 @@ function render(data, locked) {
     .map(([k, v]) => `<span class="chip">${k} ${v}</span>`).join('');
   const conf = (i) => i.confidence ? `<span class="chip">${i.confidence}% match${i.references ? ' · ' + i.references + ' refs' : ''}</span>` : '';
 
+  const personalized = (data.personalized_ideas || []).length ? `<div class="card">
+      <div class="eyebrow">Personalized ideas · made for you</div>
+      <div class="steps">${data.personalized_ideas.map(i => `<div class="step done"><span><strong>${i.title}</strong> <span class="chip">${i.type}</span>${i.for ? ' <span class="chip">for '+i.for+'</span>' : ''}<br><span class="muted">${i.reason}</span><br><span class="muted">“${i.quote || ''}”${i.quote_sender ? ' — '+i.quote_sender : ''}</span></span><span>${i.confidence||''}%</span></div>`).join('')}</div>
+    </div>` : '';
+
   const bundles = (data.bundles || []).map(b => `<div class="card">
       <div class="eyebrow">Bundle · ${b.confidence}% match</div><h2>${b.name}</h2>
       <p class="muted">${b.blurb}</p>
@@ -83,7 +88,7 @@ function render(data, locked) {
       <div class="steps">${ideas.map(idea => `<div class="step done"><span><strong>${idea.title}</strong><br><span class="chip-row">${conf(idea)}${typeChips(idea.types)}</span><br><span class="muted">${idea.reason}</span><br><span class="muted">“${idea.quote || 'Supporting quote unlocks when available.'}”</span></span><span>${label(idea.budget)}</span></div>`).join('') || '<p class="muted">No recommendation crossed the rule threshold.</p>'}</div>
     </div>`;
   }).join('');
-  document.getElementById('suggestions').innerHTML = bundles + cards;
+  document.getElementById('suggestions').innerHTML = personalized + bundles + cards;
 }
 
 function renderLocked(data) {

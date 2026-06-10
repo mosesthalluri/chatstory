@@ -40,6 +40,11 @@ def create_intent(job_id: str, product: str, email: str, export_type: str) -> di
         "status": "pending",
         "transaction_id": "",
         "screenshot_path": "",
+        # 6-char access code (OTP) the user saves to re-open the download page
+        # after approval, without needing to log in.
+        "access_code": secrets.token_hex(3).upper(),
+        # Optional note the admin sends back to the user (shown on the page).
+        "admin_message": "",
         "created_at": datetime.now().isoformat(),
         "updated_at": datetime.now().isoformat(),
         "verified_at": "",
@@ -91,6 +96,37 @@ def for_job(job_id: str) -> dict | None:
 
 def get(payment_id: str) -> dict | None:
     return next((r for r in _load() if r["id"] == payment_id), None)
+
+
+def set_admin_message(payment_id: str, message: str) -> dict | None:
+    records = _load()
+    record = next((r for r in records if r["id"] == payment_id), None)
+    if record is None:
+        return None
+    record["admin_message"] = message.strip()
+    record["updated_at"] = datetime.now().isoformat()
+    _save(records)
+    return record
+
+
+def set_admin_message_by_job(job_id: str, message: str) -> dict | None:
+    """Convenience for the Telegram '/msg <job_id> <text>' command."""
+    rec = for_job(job_id)
+    return set_admin_message(rec["id"], message) if rec else None
+
+
+def check_access(job_id: str, code: str) -> bool:
+    """True if there's a VERIFIED payment for this job whose access code
+    matches (case-insensitive). Lets a paying user re-open downloads with
+    just their OTP, no login required."""
+    code = (code or "").strip().upper()
+    if not code:
+        return False
+    for r in _load():
+        if (r["job_id"] == job_id and r.get("status") == "verified"
+                and (r.get("access_code") or "").upper() == code):
+            return True
+    return False
 
 
 def all_payments() -> list[dict]:
