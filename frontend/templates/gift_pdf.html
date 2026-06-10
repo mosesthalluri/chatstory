@@ -61,7 +61,7 @@ p { color: #c9cbd6; font-size: 9.5pt; line-height: 1.5; margin: 0 0 3mm; }
   <p class="eyebrow">{{ idea.gift_type|replace('_',' ') }} · {{ idea.budget|replace('_',' ') }}</p>
   <h2>{{ idea.title }}</h2>
   <div class="gift-card">
-    {% if idea.confidence %}<p><span class="badge">{{ idea.confidence }}% match</span>{% if idea.references %} <span class="meta">based on {{ idea.references }} chat references</span>{% endif %}</p>{% endif %}
+    {% if idea.confidence %}<p><span class="badge">{{ idea.confidence }}% match</span>{% if idea.references %} <span class="meta">based on {{ idea.references }} mention{{ 's' if idea.references != 1 else '' }}{% if idea.top_keyword %} of “{{ idea.top_keyword }}”{% endif %}</span>{% endif %}</p>{% endif %}
     <p class="why"><strong>Why:</strong> {{ idea.reason }}</p>
     {% if idea.quote %}
     <p class="quote">“{{ idea.quote }}”<br><span class="meta">— {{ idea.quote_sender }}</span></p>

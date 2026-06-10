@@ -4,6 +4,7 @@ Gift Engine — evidence-grounded recommendations (no LLM).
 
 import asyncio
 import json
+import math
 import re
 import traceback
 from collections import Counter, defaultdict
@@ -12,9 +13,10 @@ from typing import Any
 
 from ..models import Message
 from ..core import build_intelligence
-from ..core.semantics import is_semantic_message, rank_evidence_messages, suppress_noise
+from ..core.semantics import is_semantic_message, suppress_noise
 from ..parsers import parse_chat
 from ..pipeline import nlp_insights as nlp
+from ..pipeline import content_filter
 from ..settings import OUTPUT_DIR, TEMPLATES_DIR, settings
 from . import jobs, pdf_render
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -24,37 +26,54 @@ _templates = Environment(
     autoescape=select_autoescape(["html"]),
 )
 
+# Each category has STRONG keywords (distinctive — a real signal) and WEAK
+# keywords (common — supporting only). A gift is only generated when there's
+# at least one STRONG match, and the supporting quote is guaranteed to be a
+# message that actually contains a strong keyword. This is what stops "sleep"
+# matching inside "sleepy", or a sarcastic "God is good" powering a faith gift.
 PATTERNS = {
-    "spiritual": {
-        "keywords": ["bible", "prayer", "church", "jesus", "god", "worship", "verse", "faith", "lord", "amen", "devotional"],
-    },
-    "hobbies": {
-        "keywords": ["paint", "sketch", "book", "read", "reading", "photography", "plant", "gym", "yoga", "dance", "cook", "bake"],
-    },
-    "music": {
-        "keywords": ["spotify", "playlist", "song", "album", "concert", "guitar", "piano", "music", "singer"],
-    },
-    "travel": {
-        "keywords": ["trip", "flight", "hotel", "beach", "goa", "mountain", "travel", "vacation", "passport", "roadtrip"],
-    },
-    "stress": {
-        "keywords": ["tired", "stress", "stressed", "anxious", "overwhelmed", "exam", "deadline", "workload", "burnout"],
-    },
-    "food": {
-        "keywords": ["coffee", "tea", "chai", "pizza", "biryani", "burger", "cake", "chocolate", "restaurant", "dinner", "food", "swiggy", "zomato"],
-    },
-    "gaming": {
-        "keywords": ["game", "gaming", "xbox", "playstation", "ps5", "steam", "valorant", "minecraft", "fortnite"],
-    },
-    "routines": {
-        "keywords": ["morning", "night", "sleep", "walk", "office", "class", "commute", "routine", "workout"],
-    },
-    "support": {
-        "keywords": ["proud", "you got this", "i'm here", "i am here", "miss you", "love you", "take care", "feel better", "here for you"],
-    },
+    "spiritual": {"strong": ["bible", "prayer", "pray", "praying", "church", "jesus",
+                             "worship", "sermon", "verse", "devotional", "scripture",
+                             "pastor", "blessed", "amen", "faith"],
+                  "weak": ["god", "lord", "christ", "grace", "blessing"]},
+    "hobbies": {"strong": ["painting", "sketching", "photography", "gardening", "baking",
+                          "journaling", "crochet", "knitting", "pottery", "calligraphy"],
+                "weak": ["paint", "sketch", "reading", "plant", "yoga", "dance", "cook", "bake"]},
+    "music": {"strong": ["spotify", "playlist", "concert", "album", "guitar", "piano",
+                        "singing", "band"],
+              "weak": ["song", "music", "singer", "lyrics", "melody"]},
+    "travel": {"strong": ["trip", "flight", "goa", "vacation", "passport", "roadtrip",
+                         "itinerary", "getaway"],
+               "weak": ["travel", "hotel", "journey", "outing", "beach", "mountain"]},
+    "stress": {"strong": ["stressed", "anxious", "overwhelmed", "burnout", "deadline",
+                        "panic", "exhausted", "breakdown"],
+               "weak": ["tired", "stress", "exam", "workload", "busy", "pressure"]},
+    "food": {"strong": ["biryani", "pizza", "chocolate", "swiggy", "zomato", "restaurant",
+                       "dessert", "brownie", "shawarma"],
+             "weak": ["coffee", "tea", "chai", "burger", "cake", "dinner", "food", "snack"]},
+    "gaming": {"strong": ["valorant", "minecraft", "fortnite", "playstation", "xbox",
+                        "steam", "ps5", "bgmi", "genshin"],
+               "weak": ["game", "gaming", "gamer"]},
+    "routines": {"strong": ["commute", "workout", "schedule", "treadmill", "skincare"],
+                 "weak": ["morning", "night", "sleep", "walk", "office", "class", "routine"]},
+    "support": {"strong": ["you got this", "i'm here for you", "im here for you",
+                         "here for you", "proud of you", "you'll be okay", "you will be okay",
+                         "i believe in you", "don't worry i", "im always here"],
+                "weak": ["take care", "feel better", "i'm here", "im here"]},
 }
 
 URL_RE = re.compile(r"https?://\S+", re.I)
+
+
+def _wb(words: list[str]):
+    if not words:
+        return None
+    parts = sorted({w.strip() for w in words if w.strip()}, key=len, reverse=True)
+    return re.compile(r"\b(?:" + "|".join(re.escape(w) for w in parts) + r")\b", re.I)
+
+
+_STRONG_RE = {name: _wb(cfg["strong"]) for name, cfg in PATTERNS.items()}
+_WEAK_RE = {name: _wb(cfg["weak"]) for name, cfg in PATTERNS.items()}
 
 # How each category leans across emotional gift types (0-100). Lets the UI
 # show "Sentimental 95 · Funny 40 · Faith 90" so users can choose by feel.
@@ -81,50 +100,80 @@ BUNDLE_DEFS = [
     ("Hobby & Play Kit", "Fuel for what they actually love doing", {"hobbies", "gaming", "music"}),
 ]
 
-# Single common words that are NOT real inside jokes.
-_WEAK_PHRASES = {"alone", "scared", "thanks", "okay", "good", "sorry", "read",
-                 "morning", "night", "love", "miss", "yeah", "nice", "fine"}
+# Common words / phrases that are NOT real inside jokes.
+_WEAK_PHRASES = {
+    "alone", "scared", "thanks", "okay", "good", "sorry", "read", "morning",
+    "night", "love", "miss", "yeah", "nice", "fine", "tomorrow", "together",
+    "insecure", "at work", "at home", "good morning", "good night", "love you",
+    "miss you", "right now", "i think", "i know", "i guess", "you know",
+    "i mean", "of course", "by the way", "let me", "i was", "i am", "you are",
+}
 
 
-def _confidence(references: int, evidence_score: float) -> int:
-    return max(40, min(99, int(40 + references * 3 + evidence_score * 4)))
+def _confidence(strong_refs: int, evidence_score: float) -> int:
+    """Non-saturating confidence so cards vary instead of all reading 99%."""
+    base = 55 + 25 * math.tanh(strong_refs / 6.0) + min(evidence_score, 4.0) * 2
+    return int(max(50, min(95, round(base))))
 
 
-def _scan(messages: list[Message], memories: list) -> dict[str, Any]:
-    signals = {name: {"score": 0, "examples": [], "keywords": Counter()} for name in PATTERNS}
+def _best_quote(examples: list[dict], used: set) -> tuple[str, str, float]:
+    """Pick the strongest human supporting quote that ACTUALLY contains a
+    strong keyword (every example here is already strong-grounded), is a
+    sensible length, is safe to display, and hasn't been used on another card."""
+    best, best_score = None, -1.0
+    for ex in examples:
+        text = (ex.get("text") or "").strip()
+        if not text or text in used:
+            continue
+        if not (12 <= len(text) <= 200):
+            continue
+        if not content_filter.safe_for_display(text):
+            continue
+        length_score = 1.0 - abs(110 - len(text)) / 150.0
+        score = ex.get("strong_count", 1) * 1.5 + max(length_score, 0)
+        if score > best_score:
+            best, best_score = ex, score
+    if not best:
+        return "", "", 0.0
+    used.add(best["text"].strip())
+    return best["sender"], best["text"][:200], round(best_score, 1)
+
+
+def _scan(messages: list[Message]) -> dict[str, Any]:
+    signals = {name: {"score": 0.0, "strong_refs": 0, "weak_refs": 0,
+                      "examples": [], "keywords": Counter()} for name in PATTERNS}
     links = []
     sender_support = defaultdict(int)
-    memory_weight = {
-        id(message): memory.emotional_weight
-        for memory in memories
-        for message in memory.evidence_messages
-    }
 
     for msg in messages:
         if not is_semantic_message(msg):
             continue
-        text = suppress_noise(msg.normalized_text or msg.text)
-        for url in URL_RE.findall(msg.text):
+        raw = msg.text or ""
+        for url in URL_RE.findall(raw):
             if any(host in url.lower() for host in ("spotify", "music", "youtu", "soundcloud")):
                 links.append(url.rstrip(").,"))
-        # Skip forwards / news / link dumps as gift EVIDENCE — they aren't the
-        # users' own words and produce weak, off-topic supporting quotes.
-        if URL_RE.search(msg.text) or len(msg.text) > 240:
+        # Skip forwards / news / link dumps as gift EVIDENCE.
+        if URL_RE.search(raw) or len(raw) > 240:
             continue
-        for name, cfg in PATTERNS.items():
-            matched = [kw for kw in cfg["keywords"] if kw in text]
-            if not matched:
+        text = suppress_noise(msg.normalized_text or raw)
+        for name in PATTERNS:
+            srx, wrx = _STRONG_RE[name], _WEAK_RE[name]
+            strong = [s.lower() for s in (srx.findall(text) if srx else [])]
+            weak = [w.lower() for w in (wrx.findall(text) if wrx else [])]
+            if not strong and not weak:
                 continue
-            signals[name]["score"] += len(matched) + min(memory_weight.get(id(msg), 0) / 5, 3)
-            signals[name]["keywords"].update(matched)
-            if len(signals[name]["examples"]) < 12:
+            signals[name]["score"] += len(strong) * 3 + len(weak)
+            signals[name]["strong_refs"] += len(strong)
+            signals[name]["weak_refs"] += len(weak)
+            signals[name]["keywords"].update(strong or weak)
+            # Only STRONG-grounded messages become quote candidates, so the
+            # supporting quote always actually contains a real signal word.
+            if strong and len(signals[name]["examples"]) < 16:
                 signals[name]["examples"].append({
-                    "sender": msg.sender,
-                    "text": msg.text[:200],
-                    "matched": matched,
-                    "message": msg,
+                    "sender": msg.sender, "text": raw[:240],
+                    "matched": strong, "strong_count": len(strong),
                 })
-            if name == "support":
+            if name == "support" and strong:
                 sender_support[msg.sender] += 1
 
     return {"signals": signals, "music_links": links[:20], "support_by_sender": dict(sender_support)}
@@ -153,24 +202,17 @@ def _gift(
     }
 
 
-def _ideas_for(category: str, signal: dict[str, Any], memories: list) -> list[dict[str, Any]]:
-    if signal["score"] <= 0:
+def _ideas_for(category: str, signal: dict[str, Any], used: set) -> list[dict[str, Any]]:
+    # Require a STRONG signal — no gift on weak/common words alone.
+    if signal["strong_refs"] < 1 or not signal["examples"]:
         return []
     kws = [k for k, _ in signal["keywords"].most_common(5)]
-    anchor_terms = set(kws) | set(PATTERNS[category]["keywords"][:6])
     examples = signal["examples"]
     ideas: list[dict[str, Any]] = []
 
-    def q(min_sc: float = 3.0):
-        ranked = rank_evidence_messages(
-            [example["message"] for example in examples],
-            anchor_terms,
-            memories,
-        )
-        if not ranked or ranked[0][0] < min_sc:
-            return "", "", 0.0
-        score, message = ranked[0]
-        return message.sender, message.text[:200], score
+    def q(min_sc: float = 0.0):
+        sender, text, score = _best_quote(examples, used)
+        return sender, text, score
 
     if category == "spiritual":
         anchor = kws[0] if kws else "faith"
@@ -260,41 +302,39 @@ def _ideas_for(category: str, signal: dict[str, Any], memories: list) -> list[di
             quote=quote, quote_sender=sender, evidence_score=sc,
         ))
 
-    return [i for i in ideas if i.get("quote") and i.get("evidence_score", 0) >= 2.5][:2]
+    # Keep only gifts that ended up with a real supporting quote.
+    return [i for i in ideas if i.get("quote")][:2]
 
 
-def _inside_joke_gifts(phrases: list[dict], messages: list[Message], memories: list) -> list[dict[str, Any]]:
+def _inside_joke_gifts(phrases: list[dict], messages: list[Message], used: set) -> list[dict[str, Any]]:
     gifts = []
     candidates = [item for item in phrases if item["phrase_type"] == "relationship_specific"]
     for phrase in candidates:
-        if len(gifts) >= 3:
+        if len(gifts) >= 2:
             break
         ph = phrase["phrase"].strip().lower()
-        # Skip generic single common words — a real inside joke is a recurring
-        # multi-word phrase or a distinctive long token, not "alone"/"thanks".
-        if ph in _WEAK_PHRASES or (len(ph.split()) == 1 and len(ph) < 7):
+        # A real inside joke is a recurring MULTI-WORD phrase — never a single
+        # common word like "together"/"tomorrow"/"insecure".
+        if len(ph.split()) < 2 or ph in _WEAK_PHRASES:
             continue
-        matches = [
-            message for message in messages
-            if phrase["phrase"] in suppress_noise(message.normalized_text or message.text)
-            and not URL_RE.search(message.text) and len(message.text) <= 240
+        # The supporting message must contain the phrase, be human, and short.
+        examples = [
+            {"sender": m.sender, "text": (m.text or "")[:200], "strong_count": 2}
+            for m in messages
+            if ph in suppress_noise(m.normalized_text or m.text).lower()
+            and not URL_RE.search(m.text or "") and 12 <= len(m.text or "") <= 200
         ]
-        ranked = rank_evidence_messages(matches, {phrase["phrase"]}, memories)
-        if not ranked:
+        sender, quote, sc = _best_quote(examples, used)
+        if not quote:
             continue
-        sc, evidence = ranked[0]
         gifts.append(_gift(
-            category="inside_joke",
-            budget="low_budget",
-            gift_type="inside_joke",
+            category="inside_joke", budget="low_budget", gift_type="inside_joke",
             title=f"Custom mug / sticker pack referencing “{phrase['phrase']}”",
             reason=(
-                f"“{phrase['phrase']}” recurs in meaningful conversation, "
-                "with enough specificity to feel recognizable rather than generic."
+                f"“{phrase['phrase']}” keeps coming back in your chat — a shared "
+                "phrase only the two of you would recognize."
             ),
-            quote=evidence.text[:200],
-            quote_sender=evidence.sender,
-            evidence_score=sc,
+            quote=quote, quote_sender=sender, evidence_score=sc,
         ))
     return gifts
 
@@ -315,16 +355,21 @@ def _build_bundles(all_ideas: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def compute_gifts(messages: list[Message], detected_format: str, senders: list[str]) -> dict[str, Any]:
     intelligence = build_intelligence(messages, senders)
-    scanned = _scan(messages, intelligence.memories)
+    scanned = _scan(messages)
     signals = scanned["signals"]
     phrases = intelligence.semantic_phrases
 
-    references = {name: sum(data["keywords"].values()) for name, data in signals.items()}
+    # References = STRONG keyword hits only (the meaningful, distinctive ones),
+    # so "188 references" inflated by casual words can't happen.
+    references = {name: data["strong_refs"] for name, data in signals.items()}
+    top_keyword = {name: (data["keywords"].most_common(1)[0][0] if data["keywords"] else "")
+                   for name, data in signals.items()}
 
+    used_quotes: set = set()
     all_ideas: list[dict[str, Any]] = []
     for category, signal in signals.items():
-        all_ideas.extend(_ideas_for(category, signal, intelligence.memories))
-    all_ideas.extend(_inside_joke_gifts(phrases, messages, intelligence.memories))
+        all_ideas.extend(_ideas_for(category, signal, used_quotes))
+    all_ideas.extend(_inside_joke_gifts(phrases, messages, used_quotes))
     all_ideas = nlp.dedupe_gifts(all_ideas)
 
     # Annotate each gift with a confidence score, the data behind it, and an
@@ -332,6 +377,7 @@ def compute_gifts(messages: list[Message], detected_format: str, senders: list[s
     for idea in all_ideas:
         refs = references.get(idea["category"], 0)
         idea["references"] = refs
+        idea["top_keyword"] = top_keyword.get(idea["category"], "")
         idea["confidence"] = _confidence(refs, idea.get("evidence_score", 0))
         idea["types"] = TYPE_PROFILE.get(idea["category"], _DEFAULT_TYPES)
 
@@ -363,8 +409,8 @@ def compute_gifts(messages: list[Message], detected_format: str, senders: list[s
         "support_patterns": scanned["support_by_sender"],
         "bundles": bundles,
         "confidence_by_category": {
-            name: _confidence(references.get(name, 0), data["score"])
-            for name, data in signals.items() if data["score"] > 0
+            name: _confidence(data["strong_refs"], data["score"])
+            for name, data in signals.items() if data["strong_refs"] > 0
         },
         "relationship_intelligence": intelligence.summary(),
         "teasers": [
