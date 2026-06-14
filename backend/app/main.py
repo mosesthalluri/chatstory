@@ -31,7 +31,7 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .pipeline.orchestrator import run_pipeline, retry_render
-from .services import auth, jobs, payments, telegram_bot, notify, payment_provider
+from .services import auth, jobs, payments, telegram_bot, notify, payment_provider, ops
 from .services.chat_wrapped import run_chat_wrapped_pipeline
 from .services.gift_engine import run_gift_engine_pipeline
 from .services.pdf_clipart_service import run_pdf_clipart_pipeline
@@ -75,6 +75,7 @@ async def _retention_loop(stop: asyncio.Event) -> None:
             n = _purge_old_uploads()
             if n:
                 print(f"[retention] purged {n} expired upload(s)")
+                ops.record(f"Retention purged {n} expired upload(s)", "info")
         except Exception:
             pass
         try:
@@ -107,6 +108,8 @@ async def lifespan(app: FastAPI):
     # configured. Without this, "first signup becomes admin" means a random
     # visitor could claim admin, and an existing non-admin user base would
     # lock admin out entirely.
+    ops.install_log_capture()
+    ops.record("Server starting up", "info")
     try:
         auth.seed_admin()
     except Exception as exc:  # never block startup on seeding
@@ -683,6 +686,7 @@ async def razorpay_verify(
     if record is None:
         raise HTTPException(404, "Matching order not found")
     jobs.update(record["job_id"], paid=True)
+    ops.record(f"Razorpay payment confirmed for job {record['job_id']}", "info")
     await notify.send(
         record.get("email", ""), "Payment received — your download is ready",
         f"Thanks! Your payment for job {record['job_id']} is confirmed. "
@@ -712,6 +716,8 @@ async def admin_dashboard(request: Request):
         users=auth.all_users(),
         jobs=_all_jobs(),
         queue=job_queue.snapshot(),
+        storage=ops.storage_report(),
+        logs=ops.recent(60),
     )
 
 
@@ -719,6 +725,12 @@ async def admin_dashboard(request: Request):
 async def admin_queue_status(request: Request):
     _require_admin(request)
     return job_queue.snapshot()
+
+
+@app.get("/api/admin/storage")
+async def admin_storage(request: Request):
+    _require_admin(request)
+    return ops.storage_report()
 
 
 @app.post("/admin/jobs/{job_id}/retry")
@@ -785,6 +797,8 @@ async def admin_cancel_job(request: Request, job_id: str):
 async def admin_verify_payment(request: Request, payment_id: str, approved: str = Form("true")):
     user = _require_admin(request)
     record = payments.verify(payment_id, user["email"], approved == "true")
+    ops.record(f"Payment {record['status']} for job {record['job_id']} by {user['email']}",
+               "info" if record["status"] == "verified" else "warning")
     if record["status"] == "verified":
         jobs.update(record["job_id"], paid=True)
         product = record.get("product") or "chat-wrapped"

@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import Awaitable, Callable
 
 from ..settings import settings
-from . import jobs, notify
+from . import jobs, notify, ops
 
 PipelineFn = Callable[..., Awaitable[None]]
 
@@ -134,6 +134,7 @@ class JobQueue:
                 await asyncio.wait_for(
                     item.fn(*item.args, **item.kwargs), timeout=timeout
                 )
+                ops.record(f"Job {job_id[:8]} ({item.product}) finished", "info")
                 # Email the user when it's ready (no-op without SMTP).
                 done = jobs.load(job_id)
                 if done and done.user_email and done.state == "done":
@@ -149,6 +150,7 @@ class JobQueue:
                 message="Processing timed out",
                 error=f"Job exceeded the {settings.QUEUE_JOB_TIMEOUT_SECONDS}s time limit",
             )
+            ops.record(f"Job {job_id[:8]} ({item.product}) timed out", "error")
         except asyncio.CancelledError:
             jobs.update(
                 job_id,
@@ -164,6 +166,7 @@ class JobQueue:
                 message="Processing failed",
                 error=f"{type(exc).__name__}: {exc}",
             )
+            ops.record(f"Job {job_id[:8]} ({item.product}) failed: {type(exc).__name__}: {exc}", "error")
             print(f"Queue job {job_id} failed:\n{tb}")
         finally:
             self._running.pop(job_id, None)

@@ -20,6 +20,19 @@
     </div>
   </section>
 
+  <section class="card" style="margin-bottom:16px">
+    <h2>Storage &amp; disk</h2>
+    {% for a in storage.alerts %}<div class="error" style="margin:6px 0">⚠ {{ a }}</div>{% endfor %}
+    <p class="muted">Volume: {{ storage.disk_used }} used of {{ storage.disk_total }} ({{ storage.percent_used }}%) ·
+      {{ storage.disk_free }} free · uploads kept {{ storage.retention_hours }}h</p>
+    <table class="table">
+      <tr><th>Area</th><th>Size</th><th>Files</th></tr>
+      {% for b in storage.breakdown %}
+      <tr><td>{{ b.label.replace("_", " ") }}</td><td>{{ b.human }}</td><td>{{ b.files }}</td></tr>
+      {% endfor %}
+    </table>
+  </section>
+
   <section class="card">
     <h2>Paytm verification</h2>
     <table class="table">
@@ -57,6 +70,20 @@
         {% endfor %}
       </table>
     </div>
+  </section>
+
+  <section class="card" style="margin-top:16px">
+    <h2>Recent activity</h2>
+    {% if not logs %}
+    <p class="muted">No activity recorded yet this session.</p>
+    {% else %}
+    <table class="table">
+      <tr><th>When</th><th>Level</th><th>Event</th></tr>
+      {% for e in logs %}
+      <tr><td>{{ e.ts.replace("T", " ") }}</td><td>{{ e.level }}</td><td>{{ e.message }}</td></tr>
+      {% endfor %}
+    </table>
+    {% endif %}
   </section>
 </main>
 </body>
