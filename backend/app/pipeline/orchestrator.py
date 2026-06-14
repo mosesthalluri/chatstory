@@ -63,6 +63,23 @@ async def run_pipeline(job_id: str, upload_path: Path) -> None:
         if not parsed.messages:
             raise ValueError("No messages could be read from this file.")
 
+        # Apply the user's selected date window (ChatStory smart flow).
+        s0 = jobs.load(job_id)
+        if s0 and (s0.date_from or s0.date_to):
+            from datetime import date as _date
+            df = _date.fromisoformat(s0.date_from) if s0.date_from else None
+            dt = _date.fromisoformat(s0.date_to) if s0.date_to else None
+            windowed = [
+                m for m in parsed.messages
+                if (df is None or m.timestamp.date() >= df)
+                and (dt is None or m.timestamp.date() <= dt)
+            ]
+            if windowed:
+                parsed.messages = windowed
+                parsed.raw_message_count = len(windowed)
+                print(f"[orchestrator] date window {s0.date_from}..{s0.date_to}: "
+                      f"{len(windowed)} messages")
+
         # Persist normalized outputs immediately. Even if the rest fails,
         # the user can inspect what we parsed.
         norm_dir = OUTPUT_DIR / job_id

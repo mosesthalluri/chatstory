@@ -91,6 +91,14 @@ class Settings(BaseSettings):
     FULL_BOOK_PRICE: int = 50
     SINGLE_EXPORT_PRICE: int = 50
     COMBINED_EXPORT_PRICE: int = 75
+
+    # ChatStory tiered pricing — admin tunes these without code changes. Price
+    # is picked from the number of messages in the user's SELECTED date range.
+    PRICE_SMALL: int = 49
+    PRICE_MEDIUM: int = 99
+    PRICE_LARGE: int = 199
+    MSG_MEDIUM_MIN: int = 2000   # >= this many selected messages -> medium
+    MSG_LARGE_MIN: int = 10000   # >= this many selected messages -> large
     PAYTM_UPI_ID: str = "your-paytm-upi@paytm"
     PAYTM_QR_IMAGE: str = "/static/paytm-qr.png"
     ADMIN_EMAIL: str = ""

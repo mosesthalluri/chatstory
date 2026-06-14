@@ -82,6 +82,9 @@ def update(
     phases: list[dict] | None = None,
     user_email: str | None = None,
     product: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    price: int | None = None,
 ) -> JobStatus | None:
     status = load(job_id)
     if status is None:
@@ -114,6 +117,12 @@ def update(
         status.user_email = user_email
     if product is not None:
         status.product = product
+    if date_from is not None:
+        status.date_from = date_from
+    if date_to is not None:
+        status.date_to = date_to
+    if price is not None:
+        status.price = price
     save(status)
     return status
 

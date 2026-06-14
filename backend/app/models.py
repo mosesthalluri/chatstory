@@ -159,6 +159,11 @@ class JobStatus:
     normalized_json: Optional[str] = None
     # Phase tracking for detailed progress display
     phases: Optional[list[dict]] = None  # [{"name": "...", "status": "done|in_progress|pending", "progress": 0-100}]
+    # ChatStory smart flow: user-selected date window (YYYY-MM-DD) and the
+    # tier price computed from the selected message volume.
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    price: Optional[int] = None
 
     def to_dict(self) -> dict:
         d = asdict(self)

@@ -365,13 +365,72 @@ async def pdf_clipart_page(request: Request):
     return template.render(product=PRODUCTS["pdf-clipart"], max_size_mb=settings.MAX_UPLOAD_SIZE_MB, user=_current_user(request))
 
 
+def _price_for_count(count: int) -> int:
+    if count >= settings.MSG_LARGE_MIN:
+        return settings.PRICE_LARGE
+    if count >= settings.MSG_MEDIUM_MIN:
+        return settings.PRICE_MEDIUM
+    return settings.PRICE_SMALL
+
+
 @app.get("/chatstory", response_class=HTMLResponse)
 async def chatstory_page(request: Request):
-    # First-class uploader for the ChatStory storybook (was previously only
-    # reachable by admins via the beta page). Posts to /api/upload and lands
-    # on the /job status page.
-    template = ui_env.get_template("product_upload.html")
-    return template.render(product=PRODUCTS["chatstory"], max_size_mb=settings.MAX_UPLOAD_SIZE_MB, user=_current_user(request))
+    # Guided storybook flow: upload -> see chat volume -> pick a date range ->
+    # see the price -> start. (Posts to /api/chatstory/analyze then /start.)
+    return ui_env.get_template("chatstory_start.html").render(
+        max_size_mb=settings.MAX_UPLOAD_SIZE_MB,
+        currency=settings.CURRENCY_SYMBOL,
+        user=_current_user(request),
+        prices={"small": settings.PRICE_SMALL, "medium": settings.PRICE_MEDIUM, "large": settings.PRICE_LARGE},
+        thresholds={"medium": settings.MSG_MEDIUM_MIN, "large": settings.MSG_LARGE_MIN},
+    )
+
+
+@app.post("/api/chatstory/analyze")
+async def chatstory_analyze(request: Request, file: UploadFile = File(...)):
+    contents = await _read_upload(file)
+    job_id, upload_path = _save_upload(
+        contents, file.filename, user_email=_user_email(request), product="chatstory")
+
+    from .parsers import parse_chat
+    from collections import Counter
+    parsed = await asyncio.to_thread(parse_chat, upload_path)
+    if not parsed.messages:
+        raise HTTPException(400, "We couldn't read any messages from that file.")
+    per_month = Counter(m.timestamp.strftime("%Y-%m") for m in parsed.messages)
+    per_year = Counter(m.timestamp.year for m in parsed.messages)
+    analysis = {
+        "total_messages": parsed.raw_message_count or len(parsed.messages),
+        "first": parsed.messages[0].timestamp.date().isoformat(),
+        "last": parsed.messages[-1].timestamp.date().isoformat(),
+        "senders": parsed.senders,
+        "per_year": sorted(per_year.items()),
+        "per_month": dict(sorted(per_month.items())),
+    }
+    jobs.update(job_id, state="ready", message="Choose your date range", stats=analysis)
+    return {"job_id": job_id, "analysis": analysis}
+
+
+@app.post("/api/chatstory/{job_id}/start")
+async def chatstory_start(request: Request, job_id: str,
+                          date_from: str = Form(""), date_to: str = Form(""),
+                          email: str = Form("")):
+    status = jobs.load(job_id)
+    if status is None:
+        raise HTTPException(404, "Job not found")
+    upload_path = _find_uploaded_file(job_id)
+    if upload_path is None:
+        raise HTTPException(404, "Upload expired — please upload again.")
+    # Count selected messages from the stored monthly histogram (no re-parse).
+    per_month = (status.stats or {}).get("per_month", {})
+    selected = sum(c for ym, c in per_month.items()
+                   if (not date_from or ym >= date_from[:7]) and (not date_to or ym <= date_to[:7]))
+    price = _price_for_count(selected or (status.stats or {}).get("total_messages", 0))
+    jobs.update(job_id, state="queued", progress=0, message="Queued",
+                date_from=date_from or None, date_to=date_to or None, price=price,
+                user_email=(email.strip().lower() or status.user_email))
+    await _enqueue_pipeline(job_id, "chatstory", run_pipeline, upload_path)
+    return {"job_id": job_id, "status_url": f"/job/{job_id}", "price": price}
 
 
 @app.get("/chatstory-coming-soon", response_class=HTMLResponse)
@@ -453,10 +512,12 @@ async def unlock_page(request: Request, product_slug: str, job_id: str):
 
 @app.post("/unlock/{product_slug}/{job_id}", response_class=HTMLResponse)
 async def create_unlock(request: Request, product_slug: str, job_id: str, email: str = Form(...), export_type: str = Form("single")):
-    product = PRODUCTS.get(product_slug)
-    if product is None or jobs.load(job_id) is None:
+    job = jobs.load(job_id)
+    if PRODUCTS.get(product_slug) is None or job is None:
         raise HTTPException(404, "Job not found")
-    payment = payments.create_intent(job_id, product_slug, email, export_type)
+    # ChatStory uses the tier price computed from the selected range.
+    amount = job.price if (product_slug == "chatstory" and job.price) else None
+    payment = payments.create_intent(job_id, product_slug, email, export_type, amount=amount)
     return _render_unlock_page(request, product_slug, job_id, payment=payment)
 
 

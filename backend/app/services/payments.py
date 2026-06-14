@@ -25,7 +25,8 @@ def _save(records: list[dict]) -> None:
     PAYMENTS_FILE.write_text(json.dumps(records, indent=2), encoding="utf-8")
 
 
-def create_intent(job_id: str, product: str, email: str, export_type: str) -> dict:
+def create_intent(job_id: str, product: str, email: str, export_type: str,
+                  amount: int | None = None) -> dict:
     records = _load()
     existing = next((r for r in records if r["job_id"] == job_id and r["email"] == email.strip().lower()), None)
     if existing and existing["status"] in {"pending", "submitted", "verified"}:
@@ -36,7 +37,7 @@ def create_intent(job_id: str, product: str, email: str, export_type: str) -> di
         "product": product,
         "email": email.strip().lower(),
         "export_type": export_type,
-        "amount": price_for(export_type),
+        "amount": amount if amount else price_for(export_type),
         "status": "pending",
         "transaction_id": "",
         "screenshot_path": "",

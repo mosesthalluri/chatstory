@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Make your ChatStory</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+<style>
+  .bar-row { display:flex; align-items:center; gap:12px; margin:6px 0; }
+  .bar-row .yr { width:54px; color:var(--muted); }
+  .bar { flex:1; height:14px; background:rgba(255,255,255,.08); border-radius:999px; overflow:hidden; }
+  .bar > span { display:block; height:100%; background:linear-gradient(90deg,#E8A87C,#b06ab3); }
+  .bar-row .ct { width:70px; text-align:right; color:#d8dae4; font-size:13px; }
+  .price { font-size:34px; font-weight:800; }
+  .range { display:flex; gap:12px; flex-wrap:wrap; }
+  .range label { display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--muted); }
+  input[type=date], input[type=email] { padding:10px; border-radius:10px; border:1px solid rgba(255,255,255,.15); background:#16171f; color:#fff; }
+</style>
+</head>
+<body>
+<main class="shell">
+  <header class="topbar">
+    <a class="brand" href="/">ChatStory</a>
+    <nav class="nav"><a href="/">Home</a>{% if user %}<a href="/dashboard">My stuff</a>{% else %}<a href="/login">Log in</a>{% endif %}</nav>
+  </header>
+
+  <section class="hero">
+    <div class="eyebrow">Storybook</div>
+    <h1>Turn your chat into a storybook.</h1>
+    <p class="lead">Upload your chat, choose the time you want to capture, and preview it free. You only pay if you love it.</p>
+  </section>
+
+  <!-- Step 1: terms + upload -->
+  <section id="step-upload">
+    <label class="card" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;margin-bottom:16px">
+      <input type="checkbox" id="terms-ok" style="margin-top:4px;width:18px;height:18px">
+      <span class="muted">I have permission to upload this chat and understand it will be processed to
+        generate AI-created content. <a href="/terms" target="_blank">Terms &amp; Privacy</a></span>
+    </label>
+    <label class="drop-zone card" id="drop-zone">
+      <span><strong id="drop-text">Drop your chat export here</strong><br>
+        <span class="muted">or tap to choose. WhatsApp TXT/ZIP, Instagram/Telegram JSON. Max {{ max_size_mb }}MB.</span></span>
+      <input type="file" id="file-input" accept=".txt,.json,.zip">
+    </label>
+    <div id="error-box"></div>
+  </section>
+
+  <!-- Step 2: choose range + price -->
+  <section id="step-choose" class="grid-2" style="display:none">
+    <div class="card">
+      <div class="eyebrow">Your chat at a glance</div>
+      <h2 id="summary"></h2>
+      <div id="bars"></div>
+      <div class="range" style="margin-top:16px">
+        <label>From<input type="date" id="from"></label>
+        <label>To<input type="date" id="to"></label>
+      </div>
+    </div>
+    <div class="card">
+      <div class="eyebrow">Your storybook</div>
+      <div class="price"><span id="price">—</span></div>
+      <p class="muted" id="price-note">Preview is free. You only pay to unlock the full book.</p>
+      <label style="display:block;margin:14px 0 6px">Where should we send updates?</label>
+      <input type="email" id="email" placeholder="you@email.com" style="width:100%">
+      <button class="btn primary" id="go" style="margin-top:16px;width:100%">Start my storybook</button>
+      <div id="error-box2"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const PRICES = {{ prices|tojson }};
+const TH = {{ thresholds|tojson }};
+const cur = "{{ currency }}";
+let JOB = null, PER_MONTH = {};
+
+const $ = id => document.getElementById(id);
+const dz = $('drop-zone'), fi = $('file-input'), eb = $('error-box');
+['dragenter','dragover'].forEach(e=>dz.addEventListener(e,ev=>{ev.preventDefault();dz.classList.add('dragover');}));
+['dragleave','drop'].forEach(e=>dz.addEventListener(e,ev=>{ev.preventDefault();dz.classList.remove('dragover');}));
+dz.addEventListener('drop',e=>{ if(e.dataTransfer.files.length) analyze(e.dataTransfer.files[0]); });
+fi.addEventListener('change',e=>{ if(e.target.files.length) analyze(e.target.files[0]); });
+
+async function analyze(file){
+  eb.innerHTML='';
+  if(!$('terms-ok').checked){ eb.innerHTML='<div class="error">Please tick the box to continue.</div>'; return; }
+  $('drop-text').textContent='Reading your chat…'; fi.disabled=true;
+  const fd=new FormData(); fd.append('file',file);
+  try{
+    const r=await fetch('/api/chatstory/analyze',{method:'POST',body:fd});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.detail||'Could not read that file');
+    JOB=d.job_id; showAnalysis(d.analysis);
+  }catch(err){ eb.innerHTML=`<div class="error">${err.message}</div>`; $('drop-text').textContent='Drop your chat export here'; fi.disabled=false; }
+}
+
+function fmt(n){ return (n||0).toLocaleString(); }
+
+function showAnalysis(a){
+  PER_MONTH=a.per_month||{};
+  $('step-upload').style.display='none';
+  $('step-choose').style.display='grid';
+  $('summary').textContent = `${fmt(a.total_messages)} messages · ${a.first} → ${a.last}`;
+  const peak=Math.max(1,...a.per_year.map(y=>y[1]));
+  $('bars').innerHTML=a.per_year.map(([yr,ct])=>`<div class="bar-row"><div class="yr">${yr}</div><div class="bar"><span style="width:${Math.round(ct/peak*100)}%"></span></div><div class="ct">${fmt(ct)}</div></div>`).join('');
+  $('from').value=a.first; $('from').min=a.first; $('from').max=a.last;
+  $('to').value=a.last; $('to').min=a.first; $('to').max=a.last;
+  recalc();
+  $('from').addEventListener('change',recalc);
+  $('to').addEventListener('change',recalc);
+}
+
+function selectedCount(){
+  const f=($('from').value||'').slice(0,7), t=($('to').value||'').slice(0,7);
+  let n=0;
+  for(const [ym,c] of Object.entries(PER_MONTH)){
+    if((!f||ym>=f)&&(!t||ym<=t)) n+=c;
+  }
+  return n;
+}
+function priceFor(n){ return n>=TH.large?PRICES.large : n>=TH.medium?PRICES.medium : PRICES.small; }
+function recalc(){
+  const n=selectedCount();
+  $('price').textContent = cur+priceFor(n);
+  $('price-note').textContent = `${fmt(n)} messages selected · preview is free, pay only to unlock.`;
+}
+
+$('go').addEventListener('click',async()=>{
+  $('error-box2').innerHTML='';
+  const fd=new FormData();
+  fd.append('date_from',$('from').value); fd.append('date_to',$('to').value); fd.append('email',$('email').value);
+  $('go').disabled=true; $('go').textContent='Starting…';
+  try{
+    const r=await fetch(`/api/chatstory/${JOB}/start`,{method:'POST',body:fd});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.detail||'Could not start');
+    window.location.href=d.status_url;
+  }catch(err){ $('error-box2').innerHTML=`<div class="error">${err.message}</div>`; $('go').disabled=false; $('go').textContent='Start my storybook'; }
+});
+</script>
+</body>
+</html>
