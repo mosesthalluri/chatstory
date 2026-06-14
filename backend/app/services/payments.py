@@ -41,6 +41,9 @@ def create_intent(job_id: str, product: str, email: str, export_type: str,
         "status": "pending",
         "transaction_id": "",
         "screenshot_path": "",
+        # Payment provider + gateway order id (used by razorpay; blank for manual).
+        "provider": "",
+        "order_id": "",
         # 6-char access code (OTP) the user saves to re-open the download page
         # after approval, without needing to log in.
         "access_code": secrets.token_hex(3).upper(),
@@ -80,6 +83,35 @@ def verify(payment_id: str, admin_email: str, approved: bool) -> dict:
         raise ValueError("Payment not found")
     record["status"] = "verified" if approved else "rejected"
     record["verified_by"] = admin_email
+    record["verified_at"] = datetime.now().isoformat()
+    record["updated_at"] = record["verified_at"]
+    _save(records)
+    return record
+
+
+def set_order(payment_id: str, provider: str, order_id: str) -> dict | None:
+    """Attach a payment-gateway order id (e.g. Razorpay) to a record."""
+    records = _load()
+    record = next((r for r in records if r["id"] == payment_id), None)
+    if record is None:
+        return None
+    record["provider"] = provider
+    record["order_id"] = order_id
+    record["updated_at"] = datetime.now().isoformat()
+    _save(records)
+    return record
+
+
+def verify_by_order(order_id: str, transaction_id: str, source: str) -> dict | None:
+    """Mark the record matching a gateway order id as verified (used after a
+    successful, signature-verified Razorpay checkout)."""
+    records = _load()
+    record = next((r for r in records if r.get("order_id") == order_id), None)
+    if record is None:
+        return None
+    record["transaction_id"] = transaction_id
+    record["status"] = "verified"
+    record["verified_by"] = source
     record["verified_at"] = datetime.now().isoformat()
     record["updated_at"] = record["verified_at"]
     _save(records)

@@ -58,8 +58,39 @@
     </div>
     {% endif %}
     <div class="card paywall">
-      <div class="eyebrow">Paytm details</div>
-      {% if payment and not unlocked %}
+      <div class="eyebrow">{% if is_razorpay %}Secure checkout{% else %}Paytm / UPI details{% endif %}</div>
+      {% if payment and not unlocked and is_razorpay and payment.order_id %}
+        <h2>Pay {{ currency }}{{ payment.amount }}</h2>
+        <p class="muted">Card, UPI or netbanking — secured by Razorpay.</p>
+        <button class="btn primary" id="rzp-btn" type="button">Pay now</button>
+        <p class="muted" id="rzp-status"></p>
+        <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+        <script>
+          document.getElementById('rzp-btn').addEventListener('click', function(){
+            var rzp = new Razorpay({
+              key: "{{ razorpay_key }}",
+              amount: {{ payment.amount }} * 100,
+              currency: "INR",
+              name: "ChatStory",
+              description: "Unlock your story",
+              order_id: "{{ payment.order_id }}",
+              prefill: { email: "{{ payment.email }}" },
+              handler: function(resp){
+                var fd = new FormData();
+                fd.append('razorpay_order_id', resp.razorpay_order_id);
+                fd.append('razorpay_payment_id', resp.razorpay_payment_id);
+                fd.append('razorpay_signature', resp.razorpay_signature);
+                fetch('/api/payments/razorpay/verify', {method:'POST', body: fd})
+                  .then(function(r){ return r.json(); })
+                  .then(function(d){ if(d.ok){ window.location.href = d.redirect; }
+                    else { document.getElementById('rzp-status').textContent = 'Verification failed — please contact support.'; }})
+                  .catch(function(){ document.getElementById('rzp-status').textContent = 'Network error — please try again.'; });
+              }
+            });
+            rzp.open();
+          });
+        </script>
+      {% elif payment and not unlocked %}
         <h2>Pay ₹{{ payment.amount }}</h2>
         <p class="muted">UPI ID: <strong>{{ paytm_upi_id }}</strong><br>Reference/job ID: <strong>{{ job_id }}</strong></p>
         <img class="qr" src="{{ paytm_qr_image }}" alt="Paytm QR">

@@ -31,7 +31,7 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .pipeline.orchestrator import run_pipeline, retry_render
-from .services import auth, jobs, payments, telegram_bot, notify
+from .services import auth, jobs, payments, telegram_bot, notify, payment_provider
 from .services.chat_wrapped import run_chat_wrapped_pipeline
 from .services.gift_engine import run_gift_engine_pipeline
 from .services.pdf_clipart_service import run_pdf_clipart_pipeline
@@ -606,11 +606,13 @@ def _render_unlock_page(request: Request, product_slug: str, job_id: str, paymen
         download_links=ctx["download_links"],
         single_price=settings.SINGLE_EXPORT_PRICE,
         combined_price=settings.COMBINED_EXPORT_PRICE,
-        paytm_upi_id=settings.PAYTM_UPI_ID,
-        paytm_qr_image=settings.PAYTM_QR_IMAGE,
+        paytm_upi_id=payment_provider.upi_id(),
+        paytm_qr_image=payment_provider.qr_image(),
         currency=settings.CURRENCY_SYMBOL,
         job_price=job.price,
         volume_count=len(volumes),
+        is_razorpay=payment_provider.is_razorpay(),
+        razorpay_key=settings.RAZORPAY_KEY,
     )
 
 
@@ -627,6 +629,12 @@ async def create_unlock(request: Request, product_slug: str, job_id: str, email:
     # ChatStory uses the tier price computed from the selected range.
     amount = job.price if (product_slug == "chatstory" and job.price) else None
     payment = payments.create_intent(job_id, product_slug, email, export_type, amount=amount)
+    # Razorpay: create an order so the unlock page can open Checkout. Falls
+    # back silently to the manual flow if the order can't be created.
+    if payment_provider.is_razorpay() and payment["status"] in ("pending", "submitted") and not payment.get("order_id"):
+        order = await payment_provider.create_order(payment["amount"], job_id, email)
+        if order and order.get("id"):
+            payment = payments.set_order(payment["id"], "razorpay", order["id"]) or payment
     return _render_unlock_page(request, product_slug, job_id, payment=payment)
 
 
@@ -657,6 +665,29 @@ async def submit_payment(job_id: str, transaction_id: str = Form(...), screensho
     await telegram_bot.send_payment_for_review(
         record, contents, screenshot.filename if screenshot else "screenshot.jpg")
     return RedirectResponse(f"/unlock/{record['product']}/{job_id}", status_code=303)
+
+
+@app.post("/api/payments/razorpay/verify")
+async def razorpay_verify(
+    razorpay_order_id: str = Form(...),
+    razorpay_payment_id: str = Form(...),
+    razorpay_signature: str = Form(...),
+):
+    """Confirm a Razorpay Checkout success payload (signature verified
+    client-side return, no public webhook needed) and unlock the job."""
+    if not payment_provider.verify_checkout_signature(
+        razorpay_order_id, razorpay_payment_id, razorpay_signature
+    ):
+        raise HTTPException(400, "Payment signature verification failed")
+    record = payments.verify_by_order(razorpay_order_id, razorpay_payment_id, "razorpay")
+    if record is None:
+        raise HTTPException(404, "Matching order not found")
+    jobs.update(record["job_id"], paid=True)
+    await notify.send(
+        record.get("email", ""), "Payment received — your download is ready",
+        f"Thanks! Your payment for job {record['job_id']} is confirmed. "
+        f"Open 'My stuff' on ChatStory to download.")
+    return {"ok": True, "redirect": f"/unlock/{record.get('product', 'chatstory')}/{record['job_id']}"}
 
 
 @app.get("/access", response_class=HTMLResponse)

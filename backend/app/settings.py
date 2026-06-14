@@ -114,6 +114,18 @@ class Settings(BaseSettings):
     VOLUME_MIN_TO_SPLIT: int = 6
     PAYTM_UPI_ID: str = "your-paytm-upi@paytm"
     PAYTM_QR_IMAGE: str = "/static/paytm-qr.png"
+
+    # Payment provider abstraction. "manual" = the UPI/Paytm screenshot flow
+    # (admin verifies). "razorpay" = Razorpay Checkout with client-side
+    # signature verification (no public webhook needed). Both share the same
+    # payment records and unlock logic, so switching is just an env change.
+    PAYMENT_PROVIDER: str = "manual"
+    # Generic UPI config (fall back to the PAYTM_* values for back-compat).
+    UPI_ID: str = ""
+    PAYMENT_QR_PATH: str = ""
+    # Razorpay keys (only used when PAYMENT_PROVIDER=razorpay).
+    RAZORPAY_KEY: str = ""
+    RAZORPAY_SECRET: str = ""
     ADMIN_EMAIL: str = ""
     ADMIN_PASSWORD: str = ""
 
