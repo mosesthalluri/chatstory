@@ -99,6 +99,19 @@ class Settings(BaseSettings):
     PRICE_LARGE: int = 199
     MSG_MEDIUM_MIN: int = 2000   # >= this many selected messages -> medium
     MSG_LARGE_MIN: int = 10000   # >= this many selected messages -> large
+
+    # Multi-volume collection (V2). A long chat is split into several volumes
+    # by era instead of one rushed PDF. Tunables:
+    #   VOLUME_CHAPTERS_TARGET — aim for ~this many chapters per volume
+    #   VOLUME_MAX             — never make more than this many volumes
+    #   VOLUME_MIN_TO_SPLIT    — fewer chapters than this stays a single volume
+    # Pricing: if PRICE_PER_VOLUME > 0, the collection costs
+    #   (number of volumes) × PRICE_PER_VOLUME. If 0 (default), the tiered
+    #   PRICE_SMALL/MEDIUM/LARGE is used and volumes are purely organizational.
+    PRICE_PER_VOLUME: int = 0
+    VOLUME_CHAPTERS_TARGET: int = 5
+    VOLUME_MAX: int = 6
+    VOLUME_MIN_TO_SPLIT: int = 6
     PAYTM_UPI_ID: str = "your-paytm-upi@paytm"
     PAYTM_QR_IMAGE: str = "/static/paytm-qr.png"
     ADMIN_EMAIL: str = ""

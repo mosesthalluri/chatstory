@@ -97,6 +97,7 @@ document.getElementById('terms-agree').addEventListener('click', () => {
 });
 if (!termsAccepted()) openTerms();
 const TH = {{ thresholds|tojson }};
+const PV = {{ per_volume|tojson }};
 const cur = "{{ currency }}";
 let JOB = null, PER_MONTH = {};
 
@@ -145,11 +146,20 @@ function selectedCount(){
   }
   return n;
 }
-function priceFor(n){ return n>=TH.large?PRICES.large : n>=TH.medium?PRICES.medium : PRICES.small; }
+function estVolumes(n){ return Math.max(1, Math.min(1 + Math.floor(n / PV.divisor), PV.max)); }
+function priceFor(n){
+  if (PV.price > 0) return estVolumes(n) * PV.price;
+  return n>=TH.large?PRICES.large : n>=TH.medium?PRICES.medium : PRICES.small;
+}
 function recalc(){
   const n=selectedCount();
   $('price').textContent = cur+priceFor(n);
-  $('price-note').textContent = `${fmt(n)} messages selected · preview is free, pay only to unlock.`;
+  if (PV.price > 0) {
+    const v = estVolumes(n);
+    $('price-note').textContent = `${fmt(n)} messages · about ${v} volume${v===1?'':'s'} · estimated, preview is free.`;
+  } else {
+    $('price-note').textContent = `${fmt(n)} messages selected · preview is free, pay only to unlock.`;
+  }
 }
 
 $('go').addEventListener('click',async()=>{

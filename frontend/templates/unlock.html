@@ -37,10 +37,18 @@
     <form class="card form" method="post" action="/unlock/{{ product_slug }}/{{ job_id }}">
       <h2>Email and export</h2>
       <input name="email" type="email" placeholder="Delivery email" value="{{ payment.email if payment else '' }}" required>
+      {% if product_slug == "chatstory" %}
+        <input type="hidden" name="export_type" value="single">
+        {% if volume_count > 1 %}
+        <p class="muted">Your story is a <strong>{{ volume_count }}-volume collection</strong>. One payment unlocks every volume.</p>
+        {% endif %}
+        {% if job_price %}<p class="muted">Total: <strong>{{ currency }}{{ job_price }}</strong></p>{% endif %}
+      {% else %}
       <select name="export_type">
         <option value="single">Single export · ₹{{ single_price }}</option>
         <option value="combined" {% if payment and payment.export_type == "combined" %}selected{% endif %}>Combined export · ₹{{ combined_price }}</option>
       </select>
+      {% endif %}
       <button class="btn primary" type="submit">Create Paytm request</button>
     </form>
     {% else %}

@@ -33,6 +33,21 @@
     <p class="muted">Job ID: <code>{{ job_id }}</code>{% if payment %} · Payment: {{ payment.status }}{% endif %}</p>
   </section>
 
+  {% if volumes and volumes|length > 1 %}
+  <section class="card" style="margin-top:16px">
+    <div class="eyebrow">Your collection</div>
+    <h2>{{ volumes|length }} volumes</h2>
+    <p class="muted" style="margin-bottom:12px">Download the whole collection above, or grab a single volume.</p>
+    <div class="chip-row" style="flex-wrap:wrap;gap:10px">
+      {% for v in volumes %}
+        {% if v.download %}
+        <a class="btn secondary" href="{{ v.download }}">{{ v.name }}{% if v.era %} · {{ v.era }}{% endif %}</a>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
   {% if product_slug != "pdf-clipart" %}
   <section class="card" style="margin-top:16px">
     <div class="eyebrow">One more touch</div>

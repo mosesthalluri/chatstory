@@ -56,8 +56,18 @@ def render_book_html(
     is_preview: bool,
     preview_chapter_count: int,
     cover_image: Path | None = None,
+    volumes: list[dict] | None = None,
+    volume: dict | None = None,
+    show_front_matter: bool = True,
 ) -> str:
-    """Render the full HTML for the book."""
+    """Render the full HTML for the book.
+
+    Multi-volume (V2): pass `volumes` (the planned collection) to insert a
+    divider page before each volume's first chapter. Pass a single `volume`
+    when rendering one volume as a standalone book (sets the cover label).
+    `show_front_matter=False` skips the shared stats/timeline/language pages
+    (used for the per-volume standalone PDFs, which the combined book covers).
+    """
     template = _jinja_env.get_template("book.html")
 
     chapter_image_html: dict[int, str] = {}
@@ -65,6 +75,14 @@ def render_book_html(
         chapter_image_html[idx] = _image_to_data_uri(path)
 
     cover_image_html = _image_to_data_uri(cover_image) if cover_image else ""
+
+    # Map the first chapter index of each volume to its divider info so the
+    # template can drop a "Volume II" page at the right seam.
+    volume_starts: dict[int, dict] = {}
+    for v in (volumes or []):
+        idxs = v.get("chapter_indices") or []
+        if idxs:
+            volume_starts[int(idxs[0])] = v
 
     return template.render(
         title=title,
@@ -78,6 +96,10 @@ def render_book_html(
         cover_image=cover_image_html,
         currency=settings.CURRENCY_SYMBOL,
         full_price=settings.FULL_BOOK_PRICE,
+        volumes=volumes or [],
+        volume_starts=volume_starts,
+        volume=volume,
+        show_front_matter=show_front_matter,
     )
 
 

@@ -17,7 +17,7 @@ from .. import models
 from ..core import build_intelligence
 from ..core.sessions import sessions_into_chapters, detect_sessions
 from ..parsers import parse_chat
-from ..pipeline import stats, chunker, chapter_gen, nlp_insights as nlp
+from ..pipeline import stats, chunker, chapter_gen, nlp_insights as nlp, volume_planner
 from ..services import image_gen, pdf_render, jobs
 from ..settings import OUTPUT_DIR, settings
 
@@ -254,6 +254,23 @@ async def run_pipeline(job_id: str, upload_path: Path) -> None:
             "phrases": [p["phrase"] for p in phrases[:8]],
         }
 
+        # Volume planning (V2): a long chat becomes a *collection* of era-based
+        # volumes rather than one rushed PDF. Short chats stay a single volume.
+        try:
+            volumes = [v.to_dict() for v in volume_planner.plan_volumes(chapter_chunks)]
+        except Exception as exc:
+            print(f"[orchestrator] volume planning failed, using single volume: {exc}")
+            volumes = []
+        if not volumes:
+            volumes = [{
+                "index": 1, "roman": "I", "name": "Volume I", "era": "Our Story",
+                "date_range": (chat_stats.get("first_message_date", "") or "")[:7],
+                "chapter_indices": [ch.index for ch in chapters],
+                "chapter_count": len(chapters),
+            }]
+        chat_stats["volumes"] = volumes
+        print(f"[orchestrator] planned {len(volumes)} volume(s)")
+
         # 8. Image picking (cliparts by default, Gemini if configured)
         jobs.update(job_id, state="rendering", progress=88, message="Picking illustrations…", phases=phases)
         image_dir = OUTPUT_DIR / job_id / "images"
@@ -348,6 +365,9 @@ async def _render_pdfs_from_data(
     else:
         date_range = f"{first} — {last}"
 
+    volumes = stats_data.get("volumes") or []
+
+    # Free preview: cover + front matter + first chapters of Volume I.
     preview_html = pdf_render.render_book_html(
         title=title, subtitle=subtitle, date_range=date_range,
         stats=stats_data, chapters=chapters,
@@ -355,11 +375,13 @@ async def _render_pdfs_from_data(
         is_preview=True,
         preview_chapter_count=settings.PREVIEW_CHAPTERS,
         cover_image=cover_image_path,
+        volumes=volumes,
     )
     preview_path = OUTPUT_DIR / job_id / "preview.pdf"
     await pdf_render.render_html_to_pdf(preview_html, preview_path)
 
-    jobs.update(job_id, progress=97, message="Rendering full PDF…")
+    # Combined collection: every chapter, with a divider page per volume.
+    jobs.update(job_id, progress=96, message="Rendering your collection…")
     full_html = pdf_render.render_book_html(
         title=title, subtitle=subtitle, date_range=date_range,
         stats=stats_data, chapters=chapters,
@@ -367,16 +389,49 @@ async def _render_pdfs_from_data(
         is_preview=False,
         preview_chapter_count=settings.PREVIEW_CHAPTERS,
         cover_image=cover_image_path,
+        volumes=volumes,
     )
     full_path = OUTPUT_DIR / job_id / "full.pdf"
     await pdf_render.render_html_to_pdf(full_html, full_path)
 
-    jobs.update(
-        job_id, state="done", progress=100,
-        message="Your book is ready",
+    # Per-volume standalone books (only when there's more than one volume).
+    if len(volumes) > 1:
+        for vi, vol in enumerate(volumes, 1):
+            idxs = set(vol.get("chapter_indices") or [])
+            vol_chapters = [c for c in chapters if c.index in idxs]
+            if not vol_chapters:
+                continue
+            vol_images = {c.index: chapter_images[c.index]
+                          for c in vol_chapters if c.index in chapter_images}
+            jobs.update(job_id, progress=97,
+                        message=f"Rendering {vol.get('name', 'Volume ' + str(vi))}…")
+            vol_html = pdf_render.render_book_html(
+                title=title, subtitle=subtitle, date_range=vol.get("date_range", date_range),
+                stats=stats_data, chapters=vol_chapters,
+                chapter_images=vol_images,
+                is_preview=False,
+                preview_chapter_count=settings.PREVIEW_CHAPTERS,
+                cover_image=cover_image_path,
+                volume=vol,
+                show_front_matter=False,
+            )
+            vol_path = OUTPUT_DIR / job_id / f"full_vol{vi}.pdf"
+            await pdf_render.render_html_to_pdf(vol_html, vol_path)
+            vol["pdf"] = str(vol_path.relative_to(OUTPUT_DIR.parent))
+            vol["download"] = f"/download/chatstory/{job_id}/volume/{vi}"
+
+    # Per-volume pricing (V2): if enabled, the collection costs
+    # (number of volumes) × PRICE_PER_VOLUME. One preview unlocks them all.
+    update_kwargs = dict(
+        state="done", progress=100,
+        message="Your collection is ready" if len(volumes) > 1 else "Your book is ready",
         preview_pdf=str(preview_path.relative_to(OUTPUT_DIR.parent)),
         full_pdf=str(full_path.relative_to(OUTPUT_DIR.parent)),
+        stats=stats_data,  # now carries volumes (+ per-volume pdf paths)
     )
+    if settings.PRICE_PER_VOLUME > 0:
+        update_kwargs["price"] = len(volumes) * settings.PRICE_PER_VOLUME
+    jobs.update(job_id, **update_kwargs)
 
 
 async def retry_render(job_id: str) -> bool:

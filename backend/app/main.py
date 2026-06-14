@@ -475,6 +475,9 @@ async def chatstory_page(request: Request):
         user=_current_user(request),
         prices={"small": settings.PRICE_SMALL, "medium": settings.PRICE_MEDIUM, "large": settings.PRICE_LARGE},
         thresholds={"medium": settings.MSG_MEDIUM_MIN, "large": settings.MSG_LARGE_MIN},
+        per_volume={"price": settings.PRICE_PER_VOLUME,
+                    "divisor": max(1, settings.MSG_LARGE_MIN // 2),
+                    "max": settings.VOLUME_MAX},
     )
 
 
@@ -518,7 +521,14 @@ async def chatstory_start(request: Request, job_id: str,
     per_month = (status.stats or {}).get("per_month", {})
     selected = sum(c for ym, c in per_month.items()
                    if (not date_from or ym >= date_from[:7]) and (not date_to or ym <= date_to[:7]))
-    price = _price_for_count(selected or (status.stats or {}).get("total_messages", 0))
+    count = selected or (status.stats or {}).get("total_messages", 0)
+    # When per-volume pricing is on, show an ESTIMATE now (final price is set
+    # from the real volume count once the collection is planned).
+    if settings.PRICE_PER_VOLUME > 0:
+        from .pipeline.volume_planner import estimate_volume_count
+        price = estimate_volume_count(count) * settings.PRICE_PER_VOLUME
+    else:
+        price = _price_for_count(count)
     jobs.update(job_id, state="queued", progress=0, message="Queued",
                 date_from=date_from or None, date_to=date_to or None, price=price,
                 user_email=(email.strip().lower() or status.user_email))
@@ -582,9 +592,11 @@ async def gift_share_card(request: Request, job_id: str):
 
 def _render_unlock_page(request: Request, product_slug: str, job_id: str, payment=None):
     product = PRODUCTS.get(product_slug)
-    if product is None or jobs.load(job_id) is None:
+    job = jobs.load(job_id)
+    if product is None or job is None:
         raise HTTPException(404, "Job not found")
     ctx = _unlock_context(request, job_id, product_slug)
+    volumes = (job.stats or {}).get("volumes", []) if product_slug == "chatstory" else []
     return ui_env.get_template("unlock.html").render(
         product=product,
         product_slug=product_slug,
@@ -596,6 +608,9 @@ def _render_unlock_page(request: Request, product_slug: str, job_id: str, paymen
         combined_price=settings.COMBINED_EXPORT_PRICE,
         paytm_upi_id=settings.PAYTM_UPI_ID,
         paytm_qr_image=settings.PAYTM_QR_IMAGE,
+        currency=settings.CURRENCY_SYMBOL,
+        job_price=job.price,
+        volume_count=len(volumes),
     )
 
 
@@ -622,12 +637,15 @@ async def download_hub(request: Request, product_slug: str, job_id: str):
     ctx = _unlock_context(request, job_id, product_slug)
     if not ctx["unlocked"]:
         return RedirectResponse(ctx["download_links"]["unlock"], status_code=303)
+    s = jobs.load(job_id)
+    volumes = (s.stats or {}).get("volumes", []) if s else []
     return ui_env.get_template("downloads.html").render(
         product=PRODUCTS[product_slug],
         product_slug=product_slug,
         job_id=job_id,
         download_links=ctx["download_links"],
         payment=ctx["payment"],
+        volumes=volumes if product_slug == "chatstory" else [],
     )
 
 
@@ -971,6 +989,22 @@ async def download_chatstory_full(request: Request, job_id: str):
     if path is None:
         raise HTTPException(404, "Full PDF not ready")
     return _pdf_attachment(path, "chatstory_full.pdf")
+
+
+@app.get("/download/chatstory/{job_id}/volume/{n}")
+async def download_chatstory_volume(request: Request, job_id: str, n: int):
+    """Download a single volume of a multi-volume collection (one shared
+    unlock covers them all)."""
+    if not _has_unlock(request, job_id):
+        return RedirectResponse(f"/job/{job_id}", status_code=303)
+    s = jobs.load(job_id)
+    volumes = (s.stats or {}).get("volumes", []) if s else []
+    if not (1 <= n <= len(volumes)) or not volumes[n - 1].get("pdf"):
+        raise HTTPException(404, "That volume is not available")
+    path = _resolve_output_path(volumes[n - 1]["pdf"])
+    if path is None or not path.exists():
+        raise HTTPException(404, "Volume PDF file missing")
+    return _pdf_attachment(path, f"chatstory_volume_{n}.pdf")
 
 
 @app.get("/api/gift-engine/result/{job_id}")

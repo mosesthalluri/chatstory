@@ -122,6 +122,13 @@ body {
   font-size: 8pt; letter-spacing: 0.15em; color: #7B9EA8;
   margin-top: 3mm; text-transform: uppercase; font-weight: 500; }
 
+/* Volume divider */
+.volume-divider { display: flex; flex-direction: column; align-items: center;
+  justify-content: center; text-align: center; gap: 4mm; }
+.vol-title { font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 46pt; font-weight: 400; font-style: italic; color: #2C3E50;
+  margin: 2mm 0; line-height: 1.05; }
+
 /* Watermark for preview */
 .watermark { position: absolute; top: 50%; left: 50%;
   transform: translate(-50%, -50%) rotate(-25deg);
@@ -164,19 +171,38 @@ body {
 <!-- Cover -->
 <div class="page cover">
   {% if is_preview %}<div class="watermark">Preview</div>{% endif %}
-  <div class="cover-label">A Storybook</div>
+  <div class="cover-label">{% if volume %}{{ volume.name }}{% elif volumes|length > 1 %}A {{ volumes|length }}-Volume Collection{% else %}A Storybook{% endif %}</div>
   <div>
     <h1 class="cover-title">{{ title }}</h1>
     <div class="cover-divider"></div>
     <div class="cover-names">{{ subtitle }}</div>
+    {% if volume and volume.era %}<div class="cover-names" style="font-size:13pt;margin-top:3mm">{{ volume.era }}</div>{% endif %}
   </div>
   <div class="cover-illo">
     {% if cover_image %}{{ cover_image|safe }}{% endif %}
   </div>
-  <div class="cover-dates">{{ date_range }}</div>
+  <div class="cover-dates">{% if volume %}{{ volume.date_range }}{% else %}{{ date_range }}{% endif %}</div>
 </div>
 
+<!-- Collection contents (multi-volume only) -->
+{% if show_front_matter and volumes|length > 1 %}
+<div class="page">
+  {% if is_preview %}<div class="watermark">Preview</div>{% endif %}
+  <div class="stats-header">
+    <div class="stats-eyebrow">The Collection</div>
+    <h2 class="stats-title">{{ volumes|length }} volumes,<br/>one story</h2>
+    <div class="stats-subtitle">Your story was big enough to deserve more than one book.</div>
+  </div>
+  <div class="chapter-body" style="margin-top:6mm">
+    {% for v in volumes %}
+      <p style="text-indent:0;margin:0 0 3mm"><strong>{{ v.name }}{% if v.era %} · {{ v.era }}{% endif %}</strong> — {{ v.date_range }} ({{ v.chapter_count }} chapter{{ "s" if v.chapter_count != 1 else "" }})</p>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <!-- Stats / Wrapped page -->
+{% if show_front_matter %}
 <div class="page">
   {% if is_preview %}<div class="watermark">Preview</div>{% endif %}
   <div class="stats-header">
@@ -250,12 +276,23 @@ body {
   </div>
 </div>
 {% endif %}
+{% endif %}{# end show_front_matter #}
 
 <!-- Chapters -->
 {% for chapter in chapters %}
   {% if is_preview and loop.index > preview_chapter_count %}
     {# Skip — paywall comes next #}
   {% else %}
+    {% if volume_starts and volumes|length > 1 and (chapter.index in volume_starts) %}
+      {% set _v = volume_starts[chapter.index] %}
+      <div class="page volume-divider">
+        {% if is_preview %}<div class="watermark">Preview</div>{% endif %}
+        <div class="cover-label">{{ _v.name }}</div>
+        <h2 class="vol-title">{{ _v.era or _v.date_range }}</h2>
+        <div class="cover-divider"></div>
+        <div class="cover-dates">{{ _v.date_range }}</div>
+      </div>
+    {% endif %}
     <div class="chapter-page">
       {% if is_preview and loop.index == preview_chapter_count %}<div class="watermark">Preview</div>{% endif %}
       <div class="chapter-eyebrow">Chapter {{ loop.index }}</div>
