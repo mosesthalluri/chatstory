@@ -17,7 +17,7 @@ from .. import models
 from ..core import build_intelligence
 from ..core.sessions import sessions_into_chapters, detect_sessions
 from ..parsers import parse_chat
-from ..pipeline import stats, chunker, chapter_gen
+from ..pipeline import stats, chunker, chapter_gen, nlp_insights as nlp
 from ..services import image_gen, pdf_render, jobs
 from ..settings import OUTPUT_DIR, settings
 
@@ -234,6 +234,25 @@ async def run_pipeline(job_id: str, upload_path: Path) -> None:
         phases[3]["status"] = "done"
         phases[3]["progress"] = 100
         phases[4]["status"] = "in_progress"
+
+        # Timeline (event anchors) + "Your Shared Language" pages for the book.
+        chat_stats["timeline"] = [{"when": ch.when, "title": ch.title} for ch in chapters]
+        names = parsed.senders or sorted({m.sender for m in parsed.messages})
+        phrases = intelligence.semantic_phrases or []
+        running_jokes = [
+            p["phrase"] for p in phrases
+            if p.get("phrase_type") == "relationship_specific"
+            and p.get("count", 0) >= 3 and len(p["phrase"].split()) >= 2
+        ][:6]
+        try:
+            nicknames = nlp.nicknames(parsed.messages, names)[:6]
+        except Exception:
+            nicknames = []
+        chat_stats["shared_language"] = {
+            "nicknames": nicknames,
+            "running_jokes": running_jokes,
+            "phrases": [p["phrase"] for p in phrases[:8]],
+        }
 
         # 8. Image picking (cliparts by default, Gemini if configured)
         jobs.update(job_id, state="rendering", progress=88, message="Picking illustrations…", phases=phases)

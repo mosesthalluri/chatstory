@@ -1262,27 +1262,82 @@ async def generate_chapter(
                        pull_quote, pull_quote_author, illo)
 
     sample = _sample_messages(text_msgs, MAX_MESSAGES_PER_CHAPTER_PROMPT)
-    prompt = STORY_GENERATION_WITH_EMOTIONAL_CONTEXT.format(
-        emotional_context="(Write only from the messages below.)",
+    prompt = EVENT_CHAPTER_PROMPT.format(
         sender_list=", ".join(sorted(sender_names)),
         entities_block=_build_entities_block(entities) or "(none detected)",
         formatted_messages=_format_highlights(sample),
     )
 
-    body = ""
+    raw = ""
     try:
-        body = await llm.complete(
+        raw = await llm.complete(
             [
                 {"role": "system", "content": (
-                    "You are a romantic novelist writing in third person about a "
-                    "real chat. Use only what the messages show — never invent "
-                    "events, dates, or feelings. Do not use first person.")},
+                    "You are a novelist writing in third person about a real chat. "
+                    "Use only what the messages show — never invent events, dates, "
+                    "or feelings. First name the key EVENT, then narrate it.")},
                 {"role": "user", "content": prompt},
             ],
-            model_size="strong", temperature=0.3, max_tokens=700,
+            model_size="strong", temperature=0.3, max_tokens=750,
         )
     except Exception as exc:  # Ollama down / timeout / API error
         print(f"[chapter_gen] chapter {index} LLM failed, using fallback: {exc}")
 
+    llm_title, body = _parse_title_body(raw)
     body = (body or "").strip() or _deterministic_chapter_body(chapter_messages)
+    # Prefer the LLM's event-based title; fall back to the deterministic one.
+    if llm_title and 3 <= len(llm_title) <= 60 and not llm_title.lower().startswith("chapter"):
+        title = llm_title
     return Chapter(index, title, when, body, pull_quote, pull_quote_author, illo)
+
+
+EVENT_CHAPTER_PROMPT = """You are writing one chapter of a book about a real chat.
+
+== PEOPLE ==
+{sender_list}
+{entities_block}
+
+== MESSAGES (your only source of truth) ==
+{formatted_messages}
+
+== TASK ==
+1. Identify the single most important EVENT or turning point in these messages
+   (e.g. a piece of news, a fight, a reunion, a plan, a goodbye).
+2. Title the chapter after that event — name the event, NOT keywords.
+   Good: "The Hospital News", "The Long Silence", "The Unexpected Call".
+   Bad: "Listen & Things", "Work & Always".
+3. Narrate it in 150-280 words, third person, grounded only in the messages.
+   Do not invent events, dates, names, or feelings the messages don't show.
+
+== OUTPUT (exactly this format) ==
+TITLE: <event-based title>
+BODY: <the chapter prose>
+"""
+
+
+def _parse_title_body(text: str) -> tuple[str, str]:
+    """Pull TITLE and BODY from the event-chapter response."""
+    if not text:
+        return "", ""
+    text = _strip_markdown(text)
+    title, body, current = "", "", None
+    buf: list[str] = []
+    for line in text.splitlines():
+        up = line.strip().upper()
+        if up.startswith("TITLE:"):
+            if current == "BODY":
+                body = "\n".join(buf).strip()
+            current, buf = "TITLE", [line.split(":", 1)[1].strip()]
+        elif up.startswith("BODY:"):
+            if current == "TITLE":
+                title = "\n".join(buf).strip()
+            current, buf = "BODY", [line.split(":", 1)[1].strip()]
+        elif current:
+            buf.append(line)
+    if current == "TITLE":
+        title = "\n".join(buf).strip()
+    elif current == "BODY":
+        body = "\n".join(buf).strip()
+    if not body:  # model ignored the format — treat whole thing as body
+        body = _smart_body_fallback(text, {}) or text.strip()
+    return title.strip().strip('"').strip("'"), body

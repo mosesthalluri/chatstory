@@ -218,6 +218,39 @@ body {
   {% endif %}
 </div>
 
+<!-- Timeline -->
+{% if stats.timeline %}
+<div class="page">
+  {% if is_preview %}<div class="watermark">Preview</div>{% endif %}
+  <div class="stats-header">
+    <div class="stats-eyebrow">The Timeline</div>
+    <h2 class="stats-title">Your story,<br/>in order</h2>
+  </div>
+  <div class="chapter-body" style="margin-top:6mm">
+    {% for t in stats.timeline %}
+      <p style="text-indent:0;margin:0 0 3mm"><strong>{{ t.when }}</strong> — {{ t.title }}</p>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Your Shared Language -->
+{% set sl = stats.shared_language %}
+{% if sl and (sl.nicknames or sl.running_jokes or sl.phrases) %}
+<div class="page">
+  {% if is_preview %}<div class="watermark">Preview</div>{% endif %}
+  <div class="stats-header">
+    <div class="stats-eyebrow">Just Between You Two</div>
+    <h2 class="stats-title">Your shared<br/>language</h2>
+  </div>
+  <div class="chapter-body" style="margin-top:6mm">
+    {% if sl.nicknames %}<p style="text-indent:0"><strong>Names you call each other:</strong> {{ sl.nicknames|join(", ") }}</p>{% endif %}
+    {% if sl.running_jokes %}<p style="text-indent:0"><strong>Running jokes &amp; references:</strong> {{ sl.running_jokes|join(" · ") }}</p>{% endif %}
+    {% if sl.phrases %}<p style="text-indent:0"><strong>Phrases that are so you:</strong> {{ sl.phrases|join(" · ") }}</p>{% endif %}
+  </div>
+</div>
+{% endif %}
+
 <!-- Chapters -->
 {% for chapter in chapters %}
   {% if is_preview and loop.index > preview_chapter_count %}
