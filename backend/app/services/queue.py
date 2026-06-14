@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import Awaitable, Callable
 
 from ..settings import settings
-from . import jobs
+from . import jobs, notify
 
 PipelineFn = Callable[..., Awaitable[None]]
 
@@ -77,6 +77,13 @@ class JobQueue:
         )
         await self._queue.put(QueueItem(job_id, product, fn, args, kwargs))
 
+    def position(self, job_id: str) -> int:
+        """1-based position in the pending queue, or 0 if not waiting."""
+        try:
+            return list(self._pending).index(job_id) + 1
+        except ValueError:
+            return 0
+
     def snapshot(self) -> dict:
         return {
             "max_concurrent": settings.QUEUE_MAX_CONCURRENT,
@@ -127,6 +134,14 @@ class JobQueue:
                 await asyncio.wait_for(
                     item.fn(*item.args, **item.kwargs), timeout=timeout
                 )
+                # Email the user when it's ready (no-op without SMTP).
+                done = jobs.load(job_id)
+                if done and done.user_email and done.state == "done":
+                    label = notify.product_label(done.product)
+                    await notify.send(
+                        done.user_email, f"Your {label} is ready",
+                        f"Good news — your {label} is ready. "
+                        f"Open ChatStory and go to 'My stuff' to preview and download it.")
         except asyncio.TimeoutError:
             jobs.update(
                 job_id,

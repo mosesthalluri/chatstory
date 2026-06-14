@@ -112,6 +112,17 @@ class Settings(BaseSettings):
     # Queue (local hardware: keep concurrent pipelines low)
     QUEUE_MAX_CONCURRENT: int = 1
     QUEUE_JOB_TIMEOUT_SECONDS: int = 7200
+    # Rough per-job time used to estimate queue wait time shown to users.
+    AVG_JOB_SECONDS: int = 600
+
+    # Email notifications (optional). If SMTP_HOST + SMTP_FROM are set, users
+    # get emailed when a job starts/finishes and when payment is approved.
+    # No-op if unset (the dashboard is always the primary tracker).
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASS: str = ""
+    SMTP_FROM: str = ""
 
     # Consumer / trust surface
     SUPPORT_EMAIL: str = "support@chatstory.app"

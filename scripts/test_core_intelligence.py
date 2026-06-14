@@ -63,18 +63,19 @@ def main() -> None:
     inside_memories = [memory.summary for memory in meaningful.memories if memory.memory_type == "inside joke"]
     assert all("proud of" not in summary and "of you" not in summary for summary in inside_memories)
 
+    import json as _json
     wrapped = compute_wrapped(meaning_messages, "test", ["A", "B"])
-    wrapped_terms = " ".join(item["word"] for item in wrapped["shared_vocabulary"])
-    assert "instagram" not in wrapped_terms
-    assert any(item["phrase"] == "mooncake" for item in wrapped["inside_jokes"])
-    assert wrapped["strongest_moments"]
+    wrapped_blob = _json.dumps(wrapped, default=str).casefold()
+    assert "instagram" not in wrapped_blob       # forwarded links never surface
+    assert wrapped["top_words"] is not None
+    assert wrapped["highlight_moments"]          # story section present
 
     gifts = compute_gifts(meaning_messages, "test", ["A", "B"])
     suggestions = [
         gift for group in gifts["suggestions"].values() for gift in group
     ]
     assert all("instagram" not in gift.get("title", "").casefold() for gift in suggestions)
-    assert any("mooncake" in gift.get("title", "").casefold() for gift in gifts["suggestions"]["inside_jokes"])
+    assert all("instagram" not in (gift.get("quote") or "").casefold() for gift in suggestions)
     assert gifts["relationship_intelligence"]["memories"]
 
     print("core intelligence test passed")

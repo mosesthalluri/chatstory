@@ -11,7 +11,9 @@ FastAPI application. Defines:
 """
 
 import asyncio
+import shutil
 import sys
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -29,7 +31,7 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .pipeline.orchestrator import run_pipeline, retry_render
-from .services import auth, jobs, payments, telegram_bot
+from .services import auth, jobs, payments, telegram_bot, notify
 from .services.chat_wrapped import run_chat_wrapped_pipeline
 from .services.gift_engine import run_gift_engine_pipeline
 from .services.pdf_clipart_service import run_pdf_clipart_pipeline
@@ -39,6 +41,64 @@ from .settings import (
     UPLOADS_DIR, OUTPUT_DIR, STATIC_DIR, TEMPLATES_DIR, STORAGE_ROOT,
     settings, BACKEND_ROOT,
 )
+
+
+_RUNNERS = {
+    "chat-wrapped": run_chat_wrapped_pipeline,
+    "gift-engine": run_gift_engine_pipeline,
+    "pdf-clipart": run_pdf_clipart_pipeline,
+    "chatstory": run_pipeline,
+}
+
+
+def _purge_old_uploads() -> int:
+    """Delete uploaded chat files older than the retention window. Generated
+    outputs and job/payment metadata are kept."""
+    hours = settings.AUTO_DELETE_AFTER_HOURS
+    if hours <= 0 or not UPLOADS_DIR.exists():
+        return 0
+    cutoff = time.time() - hours * 3600
+    removed = 0
+    for child in UPLOADS_DIR.iterdir():
+        try:
+            if child.stat().st_mtime < cutoff:
+                shutil.rmtree(child) if child.is_dir() else child.unlink()
+                removed += 1
+        except Exception:
+            pass
+    return removed
+
+
+async def _retention_loop(stop: asyncio.Event) -> None:
+    while not stop.is_set():
+        try:
+            n = _purge_old_uploads()
+            if n:
+                print(f"[retention] purged {n} expired upload(s)")
+        except Exception:
+            pass
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=3600)  # hourly
+        except asyncio.TimeoutError:
+            pass
+
+
+async def _requeue_unfinished() -> None:
+    """Re-enqueue jobs that were queued/processing when the server stopped,
+    so a restart never silently loses work."""
+    for status in jobs.list_all(limit=500):
+        if status.state not in ("queued", "processing"):
+            continue
+        upload_path = _find_uploaded_file(status.job_id)
+        fn = _RUNNERS.get(status.product or "chatstory", run_pipeline)
+        if upload_path is None:
+            jobs.update(status.job_id, state="failed",
+                        message="Could not resume after restart",
+                        error="Original upload was no longer available")
+            continue
+        jobs.update(status.job_id, state="queued", message="Resuming after restart…")
+        await job_queue.enqueue(status.job_id, status.product or "chatstory", fn,
+                                status.job_id, upload_path)
 
 
 @asynccontextmanager
@@ -53,7 +113,15 @@ async def lifespan(app: FastAPI):
         print(f"[startup] admin seed skipped: {exc}")
     await job_queue.start()
     await telegram_bot.start()  # no-op unless TELEGRAM_* configured
+    try:
+        await _requeue_unfinished()
+    except Exception as exc:
+        print(f"[startup] requeue skipped: {exc}")
+    _stop = asyncio.Event()
+    retention_task = asyncio.create_task(_retention_loop(_stop))
     yield
+    _stop.set()
+    retention_task.cancel()
     await telegram_bot.stop()
     await job_queue.stop()
 
@@ -623,6 +691,10 @@ async def admin_verify_payment(request: Request, payment_id: str, approved: str 
     if record["status"] == "verified":
         jobs.update(record["job_id"], paid=True)
         product = record.get("product") or "chat-wrapped"
+        await notify.send(
+            record.get("email", ""), "Payment approved — your download is ready",
+            f"Your payment was approved. Use access code {record.get('access_code','')} "
+            f"on the access page, or open 'My stuff' on ChatStory to download.")
         return RedirectResponse(f"/unlock/{product}/{record['job_id']}", status_code=303)
     return RedirectResponse("/admin", status_code=303)
 
@@ -689,6 +761,11 @@ def _job_status_payload(request: Request, job_id: str) -> dict:
     payload["unlocked"] = _has_unlock(request, job_id)
     payload["download_links"] = export_svc.download_links(job_id, s.product)
     payload["payment_status"] = (payments.for_job(job_id) or {}).get("status", "none")
+    pos = job_queue.position(job_id)
+    if pos:
+        snap = job_queue.snapshot()
+        payload["queue_position"] = pos
+        payload["eta_minutes"] = max(1, round((pos + snap["running_count"]) * settings.AVG_JOB_SECONDS / 60))
     return payload
 
 

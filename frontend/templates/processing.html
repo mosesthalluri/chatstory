@@ -73,7 +73,9 @@ async function poll() {
 function render(s) {
   const progress = s.progress || 0;
   document.getElementById('title').textContent = states[s.state] || s.state;
-  document.getElementById('message').textContent = emotionalMessage(s.state, s.message);
+  document.getElementById('message').textContent = s.queue_position
+    ? `You're #${s.queue_position} in line · about ${s.eta_minutes} min`
+    : emotionalMessage(s.state, s.message);
   document.getElementById('bar').style.width = progress + '%';
   document.getElementById('pct').textContent = progress + '%';
   renderSteps(s.phases || fallbackSteps(s.state));
