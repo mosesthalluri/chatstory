@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terms &amp; Privacy · ChatStory</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+<style>
+  .legal { max-width: 760px; }
+  .legal ol { padding-left: 20px; line-height: 1.7; color: #d8dae4; }
+  .legal li { margin-bottom: 10px; }
+  .legal h2 { margin-top: 26px; }
+</style>
+</head>
+<body>
+<main class="shell">
+  <header class="topbar"><a class="brand" href="/">ChatStory</a><nav class="nav"><a href="/">Home</a></nav></header>
+  <section class="hero">
+    <div class="eyebrow">The important bits, in plain words</div>
+    <h1>Terms &amp; Privacy</h1>
+    <p class="lead">ChatStory turns chats into creative keepsakes. Please read this before uploading.</p>
+  </section>
+
+  <section class="card legal">
+    <h2>Using ChatStory</h2>
+    <ol>
+      <li>You own the chat you upload, or you have permission from the people in it to upload it.</li>
+      <li>You are solely responsible for the content you upload.</li>
+      <li>Everything we create is an <strong>AI-generated, creative interpretation</strong> of your chat — a keepsake, not a record.</li>
+      <li>Outputs may contain inaccuracies, creative reconstruction, or interpretation.</li>
+      <li>We do not guarantee factual correctness of any generated output.</li>
+      <li>We are not liable for any emotional, legal, financial, personal, social, or reputational consequences arising from generated outputs.</li>
+      <li>We are not responsible for disputes between people in a chat.</li>
+      <li>You must not upload confidential, protected, illegal, or non-consensual content.</li>
+      <li>Uploaded chat files are deleted automatically after {{ retention_hours }} hours.</li>
+      <li>Generated outputs may also be deleted after a set period.</li>
+      <li>We may reject abusive, harmful, or illegal uploads.</li>
+      <li>We don't guarantee uninterrupted service.</li>
+      <li>Refunds: {{ refund_policy }}</li>
+      <li>By uploading, you consent to your chat being processed by AI to create your output.</li>
+      <li>You understand outputs may include interpretation and creative reconstruction, not literal facts.</li>
+    </ol>
+
+    <h2>Privacy</h2>
+    <ol>
+      <li>Your chats are handled securely and used only to create your output.</li>
+      <li>Uploaded chats are deleted automatically after {{ retention_hours }} hours.</li>
+      <li>We never sell your data.</li>
+      <li>You choose exactly what to upload.</li>
+    </ol>
+
+    <p class="muted" style="margin-top:20px">Questions? <a href="mailto:{{ support_email }}">{{ support_email }}</a></p>
+  </section>
+</main>
+</body>
+</html>

@@ -242,6 +242,14 @@ async def _read_upload(file: UploadFile) -> bytes:
     return contents
 
 
+def _export_videos() -> dict:
+    return {
+        "whatsapp": settings.WHATSAPP_EXPORT_VIDEO,
+        "telegram": settings.TELEGRAM_EXPORT_VIDEO,
+        "instagram": settings.INSTAGRAM_EXPORT_VIDEO,
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     template = ui_env.get_template("upload.html")
@@ -251,6 +259,17 @@ async def index(request: Request):
         single_price=settings.SINGLE_EXPORT_PRICE,
         combined_price=settings.COMBINED_EXPORT_PRICE,
         user=_current_user(request),
+        videos=_export_videos(),
+        support_email=settings.SUPPORT_EMAIL,
+    )
+
+
+@app.get("/terms", response_class=HTMLResponse)
+async def terms_page():
+    return ui_env.get_template("terms.html").render(
+        support_email=settings.SUPPORT_EMAIL,
+        refund_policy=settings.REFUND_POLICY,
+        retention_hours=settings.AUTO_DELETE_AFTER_HOURS,
     )
 
 

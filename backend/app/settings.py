@@ -105,6 +105,14 @@ class Settings(BaseSettings):
     QUEUE_MAX_CONCURRENT: int = 1
     QUEUE_JOB_TIMEOUT_SECONDS: int = 7200
 
+    # Consumer / trust surface
+    SUPPORT_EMAIL: str = "support@chatstory.app"
+    # "How to export your chats" tutorial videos (paste full YouTube URLs).
+    WHATSAPP_EXPORT_VIDEO: str = ""
+    TELEGRAM_EXPORT_VIDEO: str = ""
+    INSTAGRAM_EXPORT_VIDEO: str = ""
+    REFUND_POLICY: str = "Refunds are considered case by case — email support within 7 days of payment."
+
     # App
     SECRET_KEY: str = "change-me"
     DEBUG: bool = True

@@ -27,6 +27,12 @@
     <p class="lead">{{ product.description }}</p>
   </section>
 
+  <label class="card" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;margin-bottom:16px">
+    <input type="checkbox" id="terms-ok" style="margin-top:4px;width:18px;height:18px">
+    <span class="muted">I have permission to upload this chat and understand it will be processed to
+      generate AI-created content. <a href="/terms" target="_blank">Terms &amp; Privacy</a></span>
+  </label>
+
   <section class="grid-2">
     <label class="drop-zone card" id="drop-zone">
       <span>
@@ -89,6 +95,11 @@ fileInput.addEventListener('change', e => {
 
 async function upload(file) {
   errorBox.innerHTML = '';
+  const termsOk = document.getElementById('terms-ok');
+  if (!termsOk || !termsOk.checked) {
+    errorBox.innerHTML = '<div class="error">Please tick the box to confirm you have permission to upload this chat.</div>';
+    return;
+  }
   dropText.textContent = 'Uploading...';
   fileInput.disabled = true;
   const formData = new FormData();

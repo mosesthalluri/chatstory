@@ -4,56 +4,114 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#09090d">
-<title>ChatStory</title>
+<title>ChatStory — turn your chats into keepsakes</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/app.css">
+<style>
+  .trust { margin-top: 28px; }
+  .trust ul { list-style: none; padding: 0; margin: 14px 0 0; display: grid;
+    grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+  .trust li { color: #d8dae4; }
+  .trust li::before { content: "✓"; color: #6fcf97; font-weight: 800; margin-right: 8px; }
+  .videos { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 16px; margin-top: 14px; }
+  .video-card { background: rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); border-radius:14px; overflow:hidden; }
+  .video-card .ph { aspect-ratio: 16/9; display:flex; align-items:center; justify-content:center;
+    background:#16171f; color:var(--muted); font-size:13px; text-align:center; padding:10px; }
+  .video-card iframe { width:100%; aspect-ratio:16/9; border:0; display:block; }
+  .video-card .cap { padding:10px 12px; font-weight:600; }
+  footer { margin-top: 40px; padding: 20px 0; color: var(--muted); font-size: 13px;
+    border-top: 1px solid rgba(255,255,255,.08); }
+  footer a { color: #d8dae4; }
+  @media (max-width: 760px) { .trust ul, .videos { grid-template-columns: 1fr; } }
+</style>
 </head>
 <body>
 <main class="shell">
   <header class="topbar">
     <a class="brand" href="/">ChatStory</a>
     <nav class="nav">
-      <a href="/chat-wrapped">Chat Wrapped</a>
-      <a href="/gift-engine">Gift Engine</a>
-      <a href="/pdf-clipart">PDF Clipart</a>
       <a href="/chatstory">ChatStory</a>
+      <a href="/chat-wrapped">ChatWrapped</a>
+      <a href="/gift-engine">GiftBook</a>
+      <a href="/pdf-clipart">Enhance PDF</a>
       {% if user and user.role == "admin" %}<a href="/admin">Admin</a>{% endif %}
-      {% if user %}<a href="/dashboard">Dashboard</a><a href="/logout">Logout</a>{% else %}<a href="/login">Login</a>{% endif %}
+      {% if user %}<a href="/dashboard">My stuff</a><a href="/logout">Log out</a>{% else %}<a href="/login">Log in</a>{% endif %}
     </nav>
   </header>
 
   <section class="hero">
-    <div class="eyebrow">Private chat intelligence</div>
-    <h1>Your conversations, processed with care.</h1>
-    <p class="lead">Choose a product, upload your export, get an emotional teaser, then unlock the full export via Paytm. Single ₹{{ single_price }} · Combined ₹{{ combined_price }}.</p>
+    <div class="eyebrow">Your conversations, made into something you'll keep</div>
+    <h1>Turn your chats into keepsakes.</h1>
+    <p class="lead">Pick what you'd like to make, upload your chat, and preview it for free. You only pay if you love it.</p>
   </section>
 
-  <section class="grid-4" aria-label="ChatStory products">
-    <a class="tile" href="/chat-wrapped">
-      <span class="badge">Live</span>
-      <div class="eyebrow">Analytics</div>
-      <h2>Chat Wrapped</h2>
-      <p>Message stats, heatmaps, emojis, night chats, starters, vocabulary, and a branded PDF.</p>
-    </a>
-    <a class="tile gift" href="/gift-engine">
-      <span class="badge">Live</span>
-      <div class="eyebrow">Recommendations</div>
-      <h2>Meaningful Gift Engine</h2>
-      <p>Rule-based gift ideas from hobbies, routines, support patterns, food, travel, music, and stress.</p>
-    </a>
-    <a class="tile pdf" href="/pdf-clipart">
-      <span class="badge">Live</span>
-      <div class="eyebrow">AI illustration</div>
-      <h2>PDF Clipart</h2>
-      <p>Upload a PDF and get cute, minimal AI clipart added to pages with a clear visual theme. Free.</p>
-    </a>
+  <section class="grid-4" aria-label="What you can make">
     <a class="tile" href="/chatstory">
-      <span class="badge">Beta</span>
-      <div class="eyebrow">Narrative</div>
+      <span class="badge">New</span>
+      <div class="eyebrow">Storybook</div>
       <h2>ChatStory</h2>
-      <p>Turn your chat into an illustrated story book PDF — chapters, pull-quotes, and cover. Best with a local LLM.</p>
+      <p>Turn your chats into a storybook you can read forever — chapters, quotes and a cover.</p>
+      <span class="btn secondary" style="margin-top:14px">Open</span>
+    </a>
+    <a class="tile gift" href="/chat-wrapped">
+      <span class="badge">Popular</span>
+      <div class="eyebrow">Recap</div>
+      <h2>ChatWrapped</h2>
+      <p>Discover your most memorable moments, jokes and milestones — in a sharable recap.</p>
+      <span class="btn secondary" style="margin-top:14px">Open</span>
+    </a>
+    <a class="tile pdf" href="/gift-engine">
+      <span class="badge">Live</span>
+      <div class="eyebrow">Gifts</div>
+      <h2>GiftBook</h2>
+      <p>Turn special conversations into thoughtful, personal gift ideas for someone you love.</p>
+      <span class="btn secondary" style="margin-top:14px">Open</span>
+    </a>
+    <a class="tile" href="/pdf-clipart">
+      <span class="badge">Free</span>
+      <div class="eyebrow">Decorate</div>
+      <h2>Enhance a PDF</h2>
+      <p>Add cute, simple illustrations to any PDF to make it feel warm and personal.</p>
+      <span class="btn secondary" style="margin-top:14px">Open</span>
     </a>
   </section>
+
+  <!-- Trust -->
+  <section class="card trust">
+    <div class="eyebrow">Your privacy matters</div>
+    <h2>You're in control.</h2>
+    <ul>
+      <li>Your chats are handled securely</li>
+      <li>Uploaded chats are deleted automatically after 24 hours</li>
+      <li>We never sell your data</li>
+      <li>You choose exactly what to upload</li>
+    </ul>
+  </section>
+
+  <!-- How to export -->
+  <section class="trust">
+    <div class="eyebrow">Getting started</div>
+    <h2>How to export your chats</h2>
+    <p class="muted">A short guide for each app. It only takes a minute.</p>
+    <div class="videos">
+      {% for name, url in [("WhatsApp", videos.whatsapp), ("Telegram", videos.telegram), ("Instagram", videos.instagram)] %}
+      <div class="video-card">
+        {% if url %}
+          <iframe src="{{ url|replace('watch?v=','embed/') }}" allowfullscreen loading="lazy"></iframe>
+        {% else %}
+          <div class="ph">Tutorial video<br>coming soon</div>
+        {% endif %}
+        <div class="cap">{{ name }} export</div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <footer>
+    Free to preview · Pay only if you're happy ·
+    <a href="/terms">Terms &amp; Privacy</a> ·
+    <a href="mailto:{{ support_email }}">Contact support</a>
+  </footer>
 </main>
 </body>
 </html>
