@@ -496,15 +496,24 @@ async def chatstory_analyze(request: Request, file: UploadFile = File(...)):
     parsed = await asyncio.to_thread(parse_chat, upload_path)
     if not parsed.messages:
         raise HTTPException(400, "We couldn't read any messages from that file.")
+    # The parser merges consecutive same-sender messages into "turns", but the
+    # user-facing total counts raw sends (parsed.raw_message_count). The
+    # per-month/per-year histograms are computed on merged turns, so scale them
+    # up to the raw send count — otherwise the headline shows raw sends while
+    # the year bars and the selected-range total sum to the (smaller) merged
+    # count, which looks like dates silently dropped half the chat.
+    merged = len(parsed.messages)
+    raw = parsed.raw_message_count or merged
+    scale = (raw / merged) if merged else 1.0
     per_month = Counter(m.timestamp.strftime("%Y-%m") for m in parsed.messages)
     per_year = Counter(m.timestamp.year for m in parsed.messages)
     analysis = {
-        "total_messages": parsed.raw_message_count or len(parsed.messages),
+        "total_messages": raw,
         "first": parsed.messages[0].timestamp.date().isoformat(),
         "last": parsed.messages[-1].timestamp.date().isoformat(),
         "senders": parsed.senders,
-        "per_year": sorted(per_year.items()),
-        "per_month": dict(sorted(per_month.items())),
+        "per_year": [(y, round(c * scale)) for y, c in sorted(per_year.items())],
+        "per_month": {ym: round(c * scale) for ym, c in sorted(per_month.items())},
     }
     jobs.update(job_id, state="ready", message="Choose your date range", stats=analysis)
     return {"job_id": job_id, "analysis": analysis}

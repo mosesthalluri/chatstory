@@ -69,6 +69,8 @@ async def run_pipeline(job_id: str, upload_path: Path) -> None:
             from datetime import date as _date
             df = _date.fromisoformat(s0.date_from) if s0.date_from else None
             dt = _date.fromisoformat(s0.date_to) if s0.date_to else None
+            all_merged = len(parsed.messages)
+            orig_raw = parsed.raw_message_count or all_merged
             windowed = [
                 m for m in parsed.messages
                 if (df is None or m.timestamp.date() >= df)
@@ -76,9 +78,15 @@ async def run_pipeline(job_id: str, upload_path: Path) -> None:
             ]
             if windowed:
                 parsed.messages = windowed
-                parsed.raw_message_count = len(windowed)
+                # Keep the user-facing total on the raw-send basis: estimate the
+                # window's raw count proportionally instead of collapsing it to
+                # the merged turn count (which halved the book's "messages").
+                parsed.raw_message_count = (
+                    round(orig_raw * len(windowed) / all_merged)
+                    if all_merged else len(windowed)
+                )
                 print(f"[orchestrator] date window {s0.date_from}..{s0.date_to}: "
-                      f"{len(windowed)} messages")
+                      f"{len(windowed)} turns (~{parsed.raw_message_count} raw)")
 
         # Persist normalized outputs immediately. Even if the rest fails,
         # the user can inspect what we parsed.
