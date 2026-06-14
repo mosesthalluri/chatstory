@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A small favor before we begin · ChatStory</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+<style>
+  .favor { max-width: 720px; }
+  .favor p { color: #d8dae4; line-height: 1.75; margin: 0 0 14px; }
+  .favor ul { list-style: none; padding: 0; margin: 16px 0; }
+  .favor li { color: #d8dae4; margin: 8px 0; }
+  .favor li::before { content: "✓"; color: #6fcf97; font-weight: 800; margin-right: 10px; }
+  .favor .saying { font-style: italic; color: #E8A87C; }
+  .cta-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 22px; }
+</style>
+</head>
+<body>
+<main class="shell">
+  <header class="topbar">
+    <a class="brand" href="/">ChatStory</a>
+    <nav class="nav"><a href="/">Home</a><a href="/journey">How it works</a></nav>
+  </header>
+
+  <section class="hero">
+    <div class="eyebrow">Before we begin</div>
+    <h1>A small favor before we begin.</h1>
+  </section>
+
+  <section class="card favor">
+    <p>We know creating an account can feel like an extra step. The reason we ask is simple.</p>
+    <p>Unlike many tools that spit out results in seconds, we carefully process your chats to
+       preserve the moments, memories and stories that matter most.</p>
+    <p>Because meaningful keepsakes take time to craft, we need a way for you to:</p>
+    <ul>
+      <li>Track your generation progress</li>
+      <li>View previews</li>
+      <li>Access completed books anytime</li>
+      <li>Manage payments and downloads</li>
+      <li>Return to your stories whenever you like</li>
+    </ul>
+    <p>Memories are precious and shouldn't be forgotten. We believe they deserve more than a
+       rushed summary.</p>
+    <p class="saying">As the saying goes, good things take time.</p>
+    <p>Please create an account so we can keep your stories safe and let you follow their
+       progress from start to finish.</p>
+    <div class="cta-row">
+      <a class="btn primary" href="/signup">Create account</a>
+      <a class="btn secondary" href="/login">Sign in</a>
+    </div>
+  </section>
+</main>
+</body>
+</html>

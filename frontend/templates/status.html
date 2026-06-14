@@ -41,6 +41,7 @@
 const jobId = "{{ job_id }}";
 const currency = "{{ currency }}";
 const price = "{{ price }}";
+const supportEmail = "{{ support_email }}";
 let timer = null;
 
 async function poll() {
@@ -48,6 +49,19 @@ async function poll() {
   const data = await resp.json();
   render(data);
   if (data.state === 'done' || data.state === 'failed') clearInterval(timer);
+}
+
+async function retryJob(btn) {
+  btn.disabled = true; btn.textContent = 'Retrying…';
+  try {
+    const r = await fetch(`/api/jobs/${jobId}/retry`, { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'Could not retry');
+    window.location.href = d.status_url || `/job/${jobId}`;
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Try again';
+    document.getElementById('error-box').innerHTML += `<div class="error">${e.message}</div>`;
+  }
 }
 
 function render(s) {
@@ -62,14 +76,19 @@ function render(s) {
     document.getElementById('result-title').textContent = 'Export complete';
     if (s.unlocked) {
       document.getElementById('result-copy').textContent = 'Download your full storybook PDF.';
-      document.getElementById('actions').innerHTML = `<a class="btn primary" href="/download/chatstory/${jobId}/full">Download full PDF</a><a class="btn secondary" href="/preview/${jobId}">Preview</a>`;
+      document.getElementById('actions').innerHTML = `<a class="btn primary" href="/download/chatstory/${jobId}/full">Download full PDF</a><a class="btn secondary" href="/preview/${jobId}">Preview</a><a class="btn secondary" href="/pdf-clipart">✨ Enhance my PDF</a>`;
     } else {
       document.getElementById('result-copy').textContent = 'Preview is free. Unlock for the full PDF after Paytm verification.';
       document.getElementById('actions').innerHTML = `<a class="btn secondary" href="/preview/${jobId}">Open preview</a><a class="btn primary" href="/unlock/chatstory/${jobId}">Unlock full book</a>`;
     }
   }
   if (s.state === 'failed') {
-    document.getElementById('title').textContent = 'Something stopped';
+    document.getElementById('title').textContent = 'Generation failed';
+    document.getElementById('result-title').textContent = 'We couldn’t finish this one';
+    document.getElementById('result-copy').textContent = s.error || s.message || 'Something interrupted us.';
+    document.getElementById('actions').innerHTML =
+      `<button class="btn primary" onclick="retryJob(this)">Try again</button>` +
+      (supportEmail ? `<a class="btn secondary" href="mailto:${supportEmail}?subject=ChatStory%20job%20${jobId}">Contact support</a>` : '');
     document.getElementById('error-box').innerHTML = `<div class="error">${s.error || s.message || 'Unknown error'}</div>`;
   }
 }

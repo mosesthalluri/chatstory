@@ -106,3 +106,16 @@ h2 { font-size: clamp(24px, 3vw, 36px); line-height: 1.05; }
   .tile { min-height: 220px; }
   .shell { padding-inline: 16px; }
 }
+
+/* Blocking terms modal (V2) */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(3,3,6,.78);
+  backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center;
+  padding: 20px; z-index: 1000; }
+.modal-backdrop.open { display: flex; }
+.modal { max-width: 560px; width: 100%; background: #14151d; border: 1px solid var(--line);
+  border-radius: 16px; padding: 26px; max-height: 88vh; overflow-y: auto; }
+.modal h2 { margin-bottom: 10px; }
+.modal ul { list-style: none; padding: 0; margin: 14px 0; }
+.modal li { color: var(--muted); margin: 9px 0; line-height: 1.5; }
+.modal li::before { content: "\2022"; color: var(--gold); font-weight: 800; margin-right: 10px; }
+.modal .modal-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 18px; }

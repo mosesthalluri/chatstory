@@ -32,6 +32,15 @@
     </div>
     <p class="muted">Job ID: <code>{{ job_id }}</code>{% if payment %} · Payment: {{ payment.status }}{% endif %}</p>
   </section>
+
+  {% if product_slug != "pdf-clipart" %}
+  <section class="card" style="margin-top:16px">
+    <div class="eyebrow">One more touch</div>
+    <h2>✨ Enhance my PDF</h2>
+    <p class="muted">Add cute, hand-drawn-style illustrations to your downloaded PDF to make it feel even more personal.</p>
+    <a class="btn secondary" href="/pdf-clipart" style="margin-top:12px">Enhance this PDF</a>
+  </section>
+  {% endif %}
 </main>
 </body>
 </html>

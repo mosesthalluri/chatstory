@@ -282,6 +282,15 @@ def _require_user(request: Request) -> dict:
     return user
 
 
+def _require_upload_account(request: Request) -> str:
+    """Accounts are mandatory before uploading (V2). Returns the user's email
+    or raises a 401 the upload UIs catch to send people to /welcome."""
+    email = _user_email(request)
+    if not email:
+        raise HTTPException(401, "Please create a free account before uploading.")
+    return email
+
+
 def _save_upload(
     contents: bytes,
     filename: str | None,
@@ -341,6 +350,20 @@ async def terms_page():
     )
 
 
+@app.get("/welcome", response_class=HTMLResponse)
+async def welcome_page(request: Request):
+    # "A small favor before we begin" — shown before registration so people
+    # understand why an account is required (good things take time).
+    if _current_user(request):
+        return RedirectResponse("/journey", status_code=303)
+    return ui_env.get_template("welcome.html").render()
+
+
+@app.get("/journey", response_class=HTMLResponse)
+async def journey_page(request: Request):
+    return ui_env.get_template("journey.html").render(user=_current_user(request))
+
+
 @app.get("/signup", response_class=HTMLResponse)
 async def signup_page():
     return ui_env.get_template("auth.html").render(mode="signup", error="")
@@ -352,7 +375,8 @@ async def signup(response: Response, email: str = Form(...), password: str = For
         user = auth.create_user(email, password)
     except ValueError as exc:
         return ui_env.get_template("auth.html").render(mode="signup", error=str(exc))
-    response = RedirectResponse("/", status_code=303)
+    # New users land on the journey page so they understand the whole flow.
+    response = RedirectResponse("/journey", status_code=303)
     response.set_cookie("chatstory_session", auth.make_token(user), httponly=True, samesite="lax")
     return response
 
@@ -456,9 +480,10 @@ async def chatstory_page(request: Request):
 
 @app.post("/api/chatstory/analyze")
 async def chatstory_analyze(request: Request, file: UploadFile = File(...)):
+    email = _require_upload_account(request)
     contents = await _read_upload(file)
     job_id, upload_path = _save_upload(
-        contents, file.filename, user_email=_user_email(request), product="chatstory")
+        contents, file.filename, user_email=email, product="chatstory")
 
     from .parsers import parse_chat
     from collections import Counter
@@ -515,7 +540,8 @@ async def product_processing(product_slug: str, job_id: str):
     if product is None or jobs.load(job_id) is None:
         raise HTTPException(404, "Job not found")
     template = ui_env.get_template("processing.html")
-    return template.render(product=product, product_slug=product_slug, job_id=job_id)
+    return template.render(product=product, product_slug=product_slug, job_id=job_id,
+                           support_email=settings.SUPPORT_EMAIL)
 
 
 @app.get("/wrapped/{job_id}", response_class=HTMLResponse)
@@ -668,6 +694,28 @@ async def admin_retry_job(request: Request, job_id: str):
     return RedirectResponse("/admin", status_code=303)
 
 
+@app.post("/api/jobs/{job_id}/retry")
+async def user_retry_job(request: Request, job_id: str):
+    """Let the job's owner (or an admin) re-run a failed job from the saved
+    upload — surfaced as the Retry button on the failure screens."""
+    status = jobs.load(job_id)
+    if status is None:
+        raise HTTPException(404, "Job not found")
+    user = _current_user(request)
+    is_owner = bool(user and status.user_email and user.get("email") == status.user_email)
+    if not (is_owner or _is_admin(request)):
+        raise HTTPException(403, "You can only retry your own exports.")
+    upload_path = _find_uploaded_file(job_id)
+    if upload_path is None:
+        raise HTTPException(404, "Your upload has expired — please upload again.")
+    product = status.product or "chatstory"
+    fn = _RUNNERS.get(product, run_pipeline)
+    jobs.update(job_id, state="queued", progress=0, message="Queued for retry", error="")
+    await _enqueue_pipeline(job_id, product, fn, upload_path)
+    status_url = f"/job/{job_id}" if product == "chatstory" else f"/processing/{product}/{job_id}"
+    return {"ok": True, "status_url": status_url}
+
+
 @app.post("/admin/jobs/{job_id}/unlock")
 async def admin_unlock_job(request: Request, job_id: str):
     _require_admin(request)
@@ -720,16 +768,18 @@ async def job_page(job_id: str):
         job_id=job_id,
         currency=settings.CURRENCY_SYMBOL,
         price=settings.FULL_BOOK_PRICE,
+        support_email=settings.SUPPORT_EMAIL,
     )
 
 
 @app.post("/api/upload")
 async def upload(request: Request, file: UploadFile = File(...)):
+    email = _require_upload_account(request)
     contents = await _read_upload(file)
     job_id, upload_path = _save_upload(
         contents,
         file.filename,
-        user_email=_user_email(request),
+        user_email=email,
         product="chatstory",
     )
     await _enqueue_pipeline(job_id, "chatstory", run_pipeline, upload_path)
@@ -738,11 +788,12 @@ async def upload(request: Request, file: UploadFile = File(...)):
 
 @app.post("/api/chat-wrapped/upload")
 async def chat_wrapped_upload(request: Request, file: UploadFile = File(...)):
+    email = _require_upload_account(request)
     contents = await _read_upload(file)
     job_id, upload_path = _save_upload(
         contents,
         file.filename,
-        user_email=_user_email(request),
+        user_email=email,
         product="chat-wrapped",
     )
     await _enqueue_pipeline(job_id, "chat-wrapped", run_chat_wrapped_pipeline, upload_path)
@@ -815,11 +866,12 @@ async def download_wrapped_pdf(request: Request, job_id: str):
 
 @app.post("/api/gift-engine/upload")
 async def gift_engine_upload(request: Request, file: UploadFile = File(...)):
+    email = _require_upload_account(request)
     contents = await _read_upload(file)
     job_id, upload_path = _save_upload(
         contents,
         file.filename,
-        user_email=_user_email(request),
+        user_email=email,
         product="gift-engine",
     )
     await _enqueue_pipeline(job_id, "gift-engine", run_gift_engine_pipeline, upload_path)
@@ -837,13 +889,14 @@ async def gift_engine_status(request: Request, job_id: str):
 
 @app.post("/api/pdf-clipart/upload")
 async def pdf_clipart_upload(request: Request, file: UploadFile = File(...)):
+    email = _require_upload_account(request)
     contents = await _read_upload(file)
     if not (file.filename or "").lower().endswith(".pdf"):
         raise HTTPException(400, "Please upload a PDF file.")
     job_id, upload_path = _save_upload(
         contents,
         file.filename,
-        user_email=_user_email(request),
+        user_email=email,
         product="pdf-clipart",
     )
     await _enqueue_pipeline(job_id, "pdf-clipart", run_pdf_clipart_pipeline, upload_path)

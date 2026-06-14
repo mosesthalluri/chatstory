@@ -40,9 +40,23 @@
 <script>
 const jobId = "{{ job_id }}";
 const productSlug = "{{ product_slug }}";
+const supportEmail = "{{ support_email }}";
 const apiStatus = "{{ product.api_status }}/" + jobId;
 const resultUrl = "{{ product.result_path }}/" + jobId;
 const unlockUrl = `/unlock/${productSlug}/${jobId}`;
+
+async function retryJob(btn) {
+  btn.disabled = true; btn.textContent = 'Retrying…';
+  try {
+    const r = await fetch(`/api/jobs/${jobId}/retry`, { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'Could not retry');
+    window.location.href = d.status_url || `/processing/${productSlug}/${jobId}`;
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Try again';
+    document.getElementById('error-box').innerHTML += `<div class="error">${e.message}</div>`;
+  }
+}
 const states = {
   queued: 'Waiting in line for your story',
   processing: 'Warming up the narrative engine',
@@ -112,14 +126,17 @@ function renderPreview(s) {
     document.getElementById('preview-title').textContent = 'Your result is ready';
     if (s.unlocked && s.download_links && s.download_links.pdf) {
       document.getElementById('preview-copy').textContent = 'Payment verified — download your PDF or open the full view.';
-      document.getElementById('actions').innerHTML = `<a class="btn primary" href="${s.download_links.pdf}">Download PDF</a><a class="btn secondary" href="${resultUrl}">Open view</a>`;
+      document.getElementById('actions').innerHTML = `<a class="btn primary" href="${s.download_links.pdf}">Download PDF</a><a class="btn secondary" href="${resultUrl}">Open view</a><a class="btn secondary" href="/pdf-clipart">✨ Enhance my PDF</a>`;
     } else {
       document.getElementById('preview-copy').textContent = 'Teaser is live. Unlock via Paytm, wait for admin verification, then download from the unlock page or dashboard.';
       document.getElementById('actions').innerHTML = `<a class="btn primary" href="${resultUrl}">Open teaser</a><a class="btn secondary" href="${unlockUrl}">Unlock & download</a>`;
     }
   } else if (s.state === 'failed' || s.state === 'error') {
-    document.getElementById('preview-title').textContent = 'We could not finish this export';
-    document.getElementById('preview-copy').textContent = s.error || 'Try another export or a smaller date range.';
+    document.getElementById('preview-title').textContent = 'Generation failed';
+    document.getElementById('preview-copy').textContent = s.error || 'Something interrupted us. You can try again or contact support.';
+    document.getElementById('actions').innerHTML =
+      `<button class="btn primary" onclick="retryJob(this)">Try again</button>` +
+      (supportEmail ? `<a class="btn secondary" href="mailto:${supportEmail}?subject=ChatStory%20job%20${jobId}">Contact support</a>` : '');
     document.getElementById('error-box').innerHTML = `<div class="error">${s.error || 'Unknown error'}</div>`;
   } else if (s.stats) {
     document.getElementById('preview-title').textContent = `${(s.stats.total_messages || 0).toLocaleString()} messages detected`;

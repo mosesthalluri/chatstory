@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your story journey · ChatStory</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+<style>
+  .journey { max-width: 720px; }
+  .step-row { display: flex; gap: 16px; align-items: flex-start; padding: 14px 0;
+    border-bottom: 1px solid rgba(255,255,255,.08); }
+  .step-row:last-child { border-bottom: 0; }
+  .step-num { flex: 0 0 36px; height: 36px; width: 36px; border-radius: 999px;
+    display: flex; align-items: center; justify-content: center; font-weight: 800;
+    background: rgba(232,168,124,.18); color: #E8A87C; }
+  .step-row.done .step-num { background: rgba(111,207,151,.18); color: #6fcf97; }
+  .step-body h3 { margin: 0 0 4px; }
+  .step-body p { margin: 0; color: var(--muted); }
+  .cta-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 22px; }
+</style>
+</head>
+<body>
+<main class="shell">
+  <header class="topbar">
+    <a class="brand" href="/">ChatStory</a>
+    <nav class="nav">
+      <a href="/">Home</a>
+      {% if user %}<a href="/dashboard">My stuff</a><a href="/logout">Log out</a>{% else %}<a href="/login">Log in</a>{% endif %}
+    </nav>
+  </header>
+
+  <section class="hero">
+    <div class="eyebrow">{% if user %}Welcome, {{ user.email }}{% else %}How it works{% endif %}</div>
+    <h1>Your story journey.</h1>
+    <p class="lead">Good things take time. Here's the path from a chat export to a keepsake you'll keep forever.</p>
+  </section>
+
+  <section class="card journey">
+    {% set steps = [
+      ("Create your account", "So we can keep your stories safe and let you track progress."),
+      ("Upload your chat", "WhatsApp, Telegram or Instagram export — you choose what to share."),
+      ("Choose your time period", "Pick the era you want to capture. The price follows your choice."),
+      ("We analyze your memories", "We read carefully and map the events, eras and moments that matter."),
+      ("Preview generated", "See enough of your keepsake to know you'll love it — for free."),
+      ("Payment & unlock", "Pay only once you're happy. We verify and unlock your downloads."),
+      ("Download your collection", "Keep your books, recaps and gifts forever — return anytime."),
+    ] %}
+    {% for title, desc in steps %}
+    <div class="step-row {% if user and loop.first %}done{% endif %}">
+      <div class="step-num">{% if user and loop.first %}✓{% else %}{{ loop.index }}{% endif %}</div>
+      <div class="step-body">
+        <h3>{{ title }}</h3>
+        <p>{{ desc }}</p>
+      </div>
+    </div>
+    {% endfor %}
+    <div class="cta-row">
+      {% if user %}
+        <a class="btn primary" href="/chatstory">Start your storybook</a>
+        <a class="btn secondary" href="/">Explore all apps</a>
+      {% else %}
+        <a class="btn primary" href="/signup">Create account</a>
+        <a class="btn secondary" href="/login">Sign in</a>
+      {% endif %}
+    </div>
+  </section>
+</main>
+</body>
+</html>

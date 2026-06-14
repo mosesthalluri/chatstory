@@ -30,13 +30,8 @@
     <p class="lead">Upload your chat, choose the time you want to capture, and preview it free. You only pay if you love it.</p>
   </section>
 
-  <!-- Step 1: terms + upload -->
+  <!-- Step 1: upload (terms accepted via the blocking modal) -->
   <section id="step-upload">
-    <label class="card" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;margin-bottom:16px">
-      <input type="checkbox" id="terms-ok" style="margin-top:4px;width:18px;height:18px">
-      <span class="muted">I have permission to upload this chat and understand it will be processed to
-        generate AI-created content. <a href="/terms" target="_blank">Terms &amp; Privacy</a></span>
-    </label>
     <label class="drop-zone card" id="drop-zone">
       <span><strong id="drop-text">Drop your chat export here</strong><br>
         <span class="muted">or tap to choose. WhatsApp TXT/ZIP, Instagram/Telegram JSON. Max {{ max_size_mb }}MB.</span></span>
@@ -68,8 +63,39 @@
   </section>
 </main>
 
+<!-- Mandatory terms modal (V2): cannot upload until accepted -->
+<div class="modal-backdrop" id="terms-modal">
+  <div class="modal">
+    <div class="eyebrow">Please read before uploading</div>
+    <h2>Before you upload</h2>
+    <ul>
+      <li>You own this chat, or you have permission from the people in it to upload it.</li>
+      <li>Your chat is processed by AI to create a creative keepsake — not a literal record.</li>
+      <li>Outputs may contain inaccuracies or creative interpretation.</li>
+      <li>Uploaded chats are deleted automatically after 24 hours.</li>
+      <li>We are not responsible for disputes between people in a chat, or for any emotional,
+          financial, legal, personal, social or reputational consequences.</li>
+      <li>You accept this AI-generated interpretation. Read the full
+          <a href="/terms" target="_blank">Terms &amp; Privacy</a>.</li>
+    </ul>
+    <div class="modal-actions">
+      <button class="btn primary" id="terms-agree">I agree and continue</button>
+      <a class="btn secondary" href="/">Cancel</a>
+    </div>
+  </div>
+</div>
+
 <script>
 const PRICES = {{ prices|tojson }};
+const TERMS_KEY = 'chatstory_terms_ok';
+const termsModal = document.getElementById('terms-modal');
+const termsAccepted = () => localStorage.getItem(TERMS_KEY) === '1';
+const openTerms = () => termsModal.classList.add('open');
+document.getElementById('terms-agree').addEventListener('click', () => {
+  localStorage.setItem(TERMS_KEY, '1');
+  termsModal.classList.remove('open');
+});
+if (!termsAccepted()) openTerms();
 const TH = {{ thresholds|tojson }};
 const cur = "{{ currency }}";
 let JOB = null, PER_MONTH = {};
@@ -83,11 +109,12 @@ fi.addEventListener('change',e=>{ if(e.target.files.length) analyze(e.target.fil
 
 async function analyze(file){
   eb.innerHTML='';
-  if(!$('terms-ok').checked){ eb.innerHTML='<div class="error">Please tick the box to continue.</div>'; return; }
+  if(!termsAccepted()){ openTerms(); return; }
   $('drop-text').textContent='Reading your chat…'; fi.disabled=true;
   const fd=new FormData(); fd.append('file',file);
   try{
     const r=await fetch('/api/chatstory/analyze',{method:'POST',body:fd});
+    if(r.status===401){ window.location.href='/welcome'; return; }
     const d=await r.json();
     if(!r.ok) throw new Error(d.detail||'Could not read that file');
     JOB=d.job_id; showAnalysis(d.analysis);

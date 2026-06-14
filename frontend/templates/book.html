@@ -272,12 +272,7 @@ body {
           {% endif %}
         {% endfor %}
       </div>
-      {% if chapter.pull_quote %}
-      <div class="pullquote">
-        "{{ chapter.pull_quote }}"
-        {% if chapter.pull_quote_author %}<div class="pullquote-attr">— {{ chapter.pull_quote_author }}</div>{% endif %}
-      </div>
-      {% endif %}
+      {# Chapters end naturally — no formulaic end-of-chapter pull-quote (V2). #}
     </div>
   {% endif %}
 {% endfor %}
