@@ -31,6 +31,10 @@ input, select {
   border-radius: 8px;
   padding: 13px 14px;
 }
+/* Dark-theme <select>: the native option popup defaults to white, so the
+   light option text was invisible until hovered. Force solid dark colours. */
+select { background-color: #16171f; color: var(--text); }
+select option { background-color: #16171f; color: var(--text); }
 .shell { max-width: 1180px; margin: 0 auto; padding: 28px 20px 44px; }
 .topbar { display: flex; justify-content: space-between; align-items: center; gap: 18px; margin-bottom: 46px; }
 .brand { color: var(--red); font-size: 28px; font-weight: 800; }
