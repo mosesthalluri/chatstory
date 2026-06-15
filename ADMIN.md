@@ -111,8 +111,8 @@ publicly see `docs/04_GO_LIVE.md` (Cloudflare Tunnel).
    **`/welcome`** ("A small favor before we begin" — why an account is
    required). Sign up → lands on **`/journey`** (the 7-step explainer).
 2. **Upload** behind a **blocking terms modal** (must accept before any file is
-   sent). ChatStory: upload → chat-at-a-glance + price → start. The **whole
-   chat is kept** (no date picking, no sampling).
+   sent). ChatStory: upload → chat-at-a-glance + **pronouns per person** +
+   price → start. The **whole chat is kept** (no date picking, no sampling).
 3. **Processing** shows live **queue position + ETA**. ChatStory adds a live
    tracker: progress, a **generation log**, a **"Preview so far"** page
    (`/job/{id}/live`, auto-refreshing) and a **Cancel** button — long faithful
@@ -212,11 +212,14 @@ speed. It does NOT sample or summarize.
 
 - **What's kept / removed:** every real text message is preserved verbatim.
   Only noise is dropped — links, media/memes, system & deleted messages.
-- **Hybrid rendering:** each scene (a conversation session) gets 1-2
-  **grounded** scene-setting sentences (the only generated text; strict
-  no-invention prompt + a deterministic time-of-day fallback, so it never
-  hangs and never fabricates), followed by the **real dialogue** with per-line
-  times and a **timestamp footnote** for cross-referencing the export.
+- **Immersive narration:** each scene is **rewritten by the AI as flowing
+  third-person prose** that covers every message in order (grounded — invents
+  nothing beyond the messages; deterministic prose fallback so it never hangs),
+  using each person's name and **chosen pronouns** (asked at upload). Long
+  sessions are split into bounded passages so nothing is dropped. Every passage
+  carries a **timestamp footnote** for cross-referencing the export. The chat's
+  date format (dd/mm vs mm/dd) is detected for the whole file so the timeline
+  is correct.
 - **Outputs** (`storage/output/<job>/`): `preview.pdf` (free — first chapter),
   `full.pdf` (A4, print margins, page numbers), and `full.docx` (**editable**,
   with real Word footnotes so the reader can fix any inaccuracy). Chapters are

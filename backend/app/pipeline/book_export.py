@@ -168,25 +168,18 @@ def build_docx(manuscript: dict, out_path: Path) -> bool:
         doc.add_page_break()
         doc.add_heading(ch.get("title", ""), level=1)
         for sc in ch.get("scenes", []):
-            setting = sc.get("setting", "")
-            p = doc.add_paragraph()
-            if setting:
-                r = p.add_run(setting)
-                r.italic = True
-            # Footnote (real if available, else inline citation)
-            if not footnotes.add(p, sc.get("footnote", "")):
-                cite = p.add_run(f"  [{sc.get('footnote','')}]")
+            paras = [p for p in (sc.get("narrative") or "").split("\n\n") if p.strip()]
+            if not paras:
+                paras = ["…"]
+            last_p = None
+            for para in paras:
+                last_p = doc.add_paragraph(para.strip())
+            # Footnote on the final paragraph (real if available, else inline).
+            if last_p is not None and not footnotes.add(last_p, sc.get("footnote", "")):
+                cite = last_p.add_run(f"  [{sc.get('footnote','')}]")
                 cite.italic = True
                 cite.font.size = Pt(8)
                 cite.font.color.rgb = grey
-            for l in sc.get("lines", []):
-                lp = doc.add_paragraph()
-                who = lp.add_run(f"{l['sender']}  ")
-                who.bold = True
-                lp.add_run(l["text"])
-                tm = lp.add_run(f"   {l.get('time','')}")
-                tm.font.size = Pt(7.5)
-                tm.font.color.rgb = grey
             doc.add_paragraph()
 
     out_path.parent.mkdir(parents=True, exist_ok=True)

@@ -101,55 +101,93 @@ def _time_of_day_opener(hour: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Scene-setting (the only generated text — strictly grounded)
+# Immersive narration (AI retells each scene as prose — grounded, covers all)
 # ---------------------------------------------------------------------------
 
-SETTING_PROMPT = """You are setting the scene for one moment in a real chat, for
-an immersive keepsake book. Below are the ACTUAL messages, in order.
+NARRATE_PROMPT = """You are writing one passage of an immersive, TRUE story based
+on a real chat. Below are the ACTUAL messages of this scene, in order.
 
+== PEOPLE (use these names and pronouns) ==
+{people}
+
+== MESSAGES (your only source of truth) ==
 {dialogue}
 
-Write 1-2 short, warm sentences that set the scene for this exchange — the time
-of day, the mood the words themselves show, what it is about. RULES:
-- Use ONLY what these messages show. Do NOT invent events, names, places, or feelings.
-- Do NOT quote or repeat the messages; the real lines are printed under your text.
-- Third person. No dates or clock times (those are shown separately).
-- If the messages are too sparse to say anything grounded, reply with exactly: -
-Reply with ONLY the sentence(s), nothing else."""
+Write this scene as flowing, third-person narrative prose — like a novel — so a
+reader feels they were there. HARD RULES:
+- Cover EVERY message above, in order. Do not skip any exchange. You may quote a
+  few of their actual short phrases inside the prose.
+- Invent NOTHING. No events, feelings, places, motives, dates, or facts that the
+  messages don't show. If a line is ambiguous, narrate only what is stated.
+- Refer to each person by name and the pronouns given above.
+- Do NOT write timestamps, dates, or clock times (those are footnoted separately).
+- Do NOT use a chat/transcript format ("Name: text"). Turn it into real prose.
+- Keep it proportional: a few lines of chat -> a short paragraph; a long
+  exchange -> two or three paragraphs. Warm, specific, immersive.
+Write ONLY the prose."""
+
+
+def _people_block(senders: list[str], pronouns: dict | None) -> str:
+    pronouns = pronouns or {}
+    out = []
+    for s in senders:
+        p = (pronouns.get(s) or "they/them").strip()
+        out.append(f"- {s} — refer to {s} using {p}")
+    return "\n".join(out) if out else "- (the two people in this chat)"
 
 
 def _format_dialogue_for_prompt(lines: list[dict]) -> str:
     return "\n".join(f"{ln['sender']}: {ln['text']}" for ln in lines)
 
 
-async def _scene_setting(lines: list[dict], hour: int) -> str:
-    """One grounded setting sentence. Deterministic time-of-day fallback so a
-    scene is never blocked and nothing is invented when the model is unsure."""
-    fallback = _time_of_day_opener(hour)
-    if len(lines) < 2:
-        return fallback
-    prompt = SETTING_PROMPT.format(dialogue=_format_dialogue_for_prompt(lines[:40]))
+def _deterministic_narrative(lines: list[dict]) -> str:
+    """Readable fallback prose when the LLM is unavailable/timed out. Grounded
+    in the real words; not a raw transcript dump."""
+    parts = []
+    for ln in lines:
+        text = ln["text"].strip().rstrip(".")
+        if text:
+            parts.append(f'{ln["sender"]} wrote, "{text}."')
+    return " ".join(parts) if parts else "A quiet exchange passed between them."
+
+
+async def _narrate_scene(lines: list[dict], people: str, hour: int) -> str:
+    """Immersive AI narration of one scene, covering every message. Falls back
+    to grounded deterministic prose so a scene never blocks."""
+    prompt = NARRATE_PROMPT.format(people=people, dialogue=_format_dialogue_for_prompt(lines))
     try:
         resp = await asyncio.wait_for(
             llm.complete(
                 [
                     {"role": "system", "content": (
-                        "You write short, grounded scene-setting for a real chat. "
-                        "You never invent facts beyond the messages shown.")},
+                        "You are a careful novelist turning a real chat into immersive, "
+                        "third-person prose. You cover every message and invent nothing "
+                        "beyond what the messages show.")},
                     {"role": "user", "content": prompt},
                 ],
-                model_size="strong", temperature=0.2, max_tokens=120,
+                model_size="strong", temperature=0.4, max_tokens=900,
             ),
-            timeout=max(30, settings.FAITHFUL_SCENE_TIMEOUT_SECONDS),
+            timeout=max(45, settings.FAITHFUL_SCENE_TIMEOUT_SECONDS),
         )
     except Exception:
-        return fallback
-    text = (resp or "").strip().strip('"').strip()
-    # Models sometimes prefix labels; keep it to the first 2 sentences.
-    if not text or text == "-" or text.lower().startswith("(none"):
-        return fallback
-    text = re.sub(r"\s+", " ", text)
-    return text[:400]
+        return _deterministic_narrative(lines)
+    text = (resp or "").strip()
+    if not text or len(text) < 10:
+        return _deterministic_narrative(lines)
+    # Guard: if the model returned transcript-style lines, fall back to prose.
+    transcripty = sum(1 for l in text.splitlines() if re.match(r"^\s*\S{1,30}:\s", l))
+    if transcripty >= max(3, len(text.splitlines()) // 2):
+        return _deterministic_narrative(lines)
+    return text
+
+
+def _chunk_session(messages: list, max_n: int) -> list[list]:
+    """Split one session's messages into consecutive windows of <= max_n so a
+    very long session still narrates fully (nothing dropped) within bounded
+    prompts. Each window becomes its own footnoted passage."""
+    if len(messages) <= max_n:
+        return [messages]
+    return [messages[i:i + max_n] for i in range(0, len(messages), max_n)]
 
 
 # ---------------------------------------------------------------------------
@@ -257,11 +295,13 @@ def _is_cancelling(job_id: str) -> bool:
 # Main entry point
 # ---------------------------------------------------------------------------
 
-async def build_manuscript(job_id: str, parsed, *, title: str, subtitle: str) -> dict:
-    """Build (and incrementally persist) the full faithful manuscript.
+async def build_manuscript(job_id: str, parsed, *, title: str, subtitle: str,
+                           pronouns: dict | None = None) -> dict:
+    """Build (and incrementally persist) the full faithful manuscript: every
+    scene rewritten as immersive AI narration that covers all of its messages.
 
     Returns the manuscript dict. Honors cooperative cancellation: if the job
-    state becomes 'cancelling', it stops at the next scene boundary, finalizes
+    state becomes 'cancelling', it stops at the next passage boundary, finalizes
     whatever was generated, and returns it (so the partial preview is kept).
     """
     cleaned = clean_messages(parsed.messages)
@@ -269,9 +309,20 @@ async def build_manuscript(job_id: str, parsed, *, title: str, subtitle: str) ->
         raise ValueError("After removing links and media, no readable messages remained.")
 
     stats = compute_chat_stats(cleaned)
-    sessions = detect_sessions(cleaned)
-    total = len(sessions)
-    _log(job_id, f"Cleaned chat: {len(cleaned)} messages, {total} scenes to write.")
+    senders = stats.get("senders") or sorted({m.sender for m in cleaned})
+    people = _people_block(senders, pronouns)
+
+    # Split into scenes (sessions), then into bounded passages so even long
+    # sessions narrate fully without truncating the prompt — nothing dropped.
+    max_n = max(8, settings.FAITHFUL_MAX_SCENE_MESSAGES)
+    windows: list[list] = []
+    for session in detect_sessions(cleaned):
+        msgs = [m for m in session.messages if m.kind == MessageKind.TEXT]
+        if not msgs:
+            continue
+        windows.extend(_chunk_session(msgs, max_n))
+    total = len(windows)
+    _log(job_id, f"Cleaned chat: {len(cleaned)} messages → {total} passages to narrate.")
 
     first = cleaned[0].timestamp
     last = cleaned[-1].timestamp
@@ -294,49 +345,47 @@ async def build_manuscript(job_id: str, parsed, *, title: str, subtitle: str) ->
     current_month = None
     footnote_n = 0
 
-    for i, session in enumerate(sessions, 1):
+    for i, window in enumerate(windows, 1):
         if _is_cancelling(job_id):
             _log(job_id, "Cancellation requested — stopping and keeping the partial preview.")
             manuscript["cancelled"] = True
             break
 
+        start = window[0].timestamp
+        end = window[-1].timestamp
         lines = [
             {"sender": m.sender, "text": m.text, "time": m.timestamp.strftime("%H:%M")}
-            for m in session.messages
-            if m.kind == MessageKind.TEXT
+            for m in window
         ]
-        if not lines:
-            continue
 
-        month_label = session.start_time.strftime("%B %Y")
+        month_label = start.strftime("%B %Y")
         if month_label != current_month:
             current_month = month_label
             chapters.append({"title": month_label, "scenes": []})
             manuscript["chapters"] = chapters
 
         footnote_n += 1
-        setting = await _scene_setting(lines, session.start_time.hour)
+        narrative = await _narrate_scene(lines, people, start.hour)
         scene = {
             "n": footnote_n,
-            "date": _date_label(session.start_time.date()),
-            "time_range": _time_range(session.start_time, session.end_time),
-            "setting": setting,
-            "lines": lines,
-            "footnote": f"{_date_label(session.start_time.date())}, {_time_range(session.start_time, session.end_time)}",
+            "date": _date_label(start.date()),
+            "time_range": _time_range(start, end),
+            "narrative": narrative,
+            "footnote": f"{_date_label(start.date())}, {_time_range(start, end)}",
         }
         chapters[-1]["scenes"].append(scene)
         manuscript["scene_done"] = i
 
-        # Persist + report every few scenes (and at the end) so the live
-        # tracker/preview update without rewriting the file on every single one.
-        if i % 5 == 0 or i == total:
+        # Update progress/log every passage (cheap) for a responsive tracker;
+        # persist the manuscript every few (keeps the live preview fresh).
+        progress = 15 + int(75 * i / total) if total else 90
+        jobs.update(job_id, progress=min(progress, 90),
+                    message=f"Narrating passage {i} of {total}…")
+        if i % 3 == 0 or i == total:
             _save_manuscript(job_id, manuscript)
-            progress = 15 + int(75 * i / total) if total else 90
-            jobs.update(job_id, progress=min(progress, 90),
-                        message=f"Writing scene {i} of {total}…")
-            _log(job_id, f"Scene {i}/{total} written ({chapters[-1]['title']}).")
+            _log(job_id, f"Passage {i}/{total} narrated ({chapters[-1]['title']}).")
 
     manuscript["complete"] = not manuscript["cancelled"]
     _save_manuscript(job_id, manuscript)
-    _log(job_id, "Cancelled." if manuscript["cancelled"] else "All scenes written.")
+    _log(job_id, "Cancelled." if manuscript["cancelled"] else "All passages narrated.")
     return manuscript

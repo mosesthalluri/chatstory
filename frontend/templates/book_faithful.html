@@ -41,12 +41,9 @@
   .chapter-title { page-break-before: always; font-size: 26pt; font-weight: normal;
     margin: 0 0 8mm; color: #2a2a2a; border-bottom: 2px solid #b06a3a; padding-bottom: 3mm; }
   .scene { margin: 0 0 7mm; }
-  .scene-setting { font-style: italic; color: #5a4a3a; margin: 0 0 2.5mm; }
-  .scene-setting sup { color: #b06a3a; font-style: normal; }
-  .line { margin: 0 0 1mm; display: flex; gap: 3mm; align-items: baseline; }
-  .line .who { font-weight: bold; white-space: nowrap; }
-  .line .txt { flex: 1; }
-  .line .t { color: #b3b3b3; font-size: 7.5pt; font-family: Arial, sans-serif; white-space: nowrap; }
+  .narrative p { margin: 0 0 3mm; text-align: justify; text-indent: 6mm; }
+  .narrative p:first-child { text-indent: 0; }
+  .narrative sup { color: #b06a3a; }
   .footnote { border-top: 1px solid #e6e0d8; margin-top: 2.5mm; padding-top: 1.2mm;
     font-size: 8.5pt; color: #8a8a8a; font-family: Arial, sans-serif; }
   .footnote sup { color: #b06a3a; }
@@ -63,11 +60,10 @@
 
 <!-- Cover -->
 <div class="cover">
-  <div class="eyebrow">A Chat, Kept Whole</div>
   <h1>{{ m.title }}</h1>
   <div class="sub">{{ m.subtitle }}</div>
   <div class="range">{{ m.date_range }}</div>
-  <div class="note">Every conversation preserved · timestamps in the footnotes</div>
+  <div class="note">An immersive retelling · timestamps in the footnotes</div>
 </div>
 
 <!-- Statistics -->
@@ -105,10 +101,12 @@
   <h2 class="chapter-title">{{ ch.title }}</h2>
   {% for sc in ch.scenes %}
     <div class="scene">
-      {% if sc.setting %}<div class="scene-setting">{{ sc.setting }}<sup>{{ sc.n }}</sup></div>{% endif %}
-      {% for l in sc.lines %}
-        <div class="line"><span class="who">{{ l.sender }}</span><span class="txt">{{ l.text }}</span><span class="t">{{ l.time }}</span></div>
-      {% endfor %}
+      <div class="narrative">
+        {% set paras = (sc.narrative or "").split("\n\n") %}
+        {% for para in paras %}
+          {% if para.strip() %}<p>{{ para.strip() }}{% if loop.last %}<sup>{{ sc.n }}</sup>{% endif %}</p>{% endif %}
+        {% endfor %}
+      </div>
       <div class="footnote"><sup>{{ sc.n }}</sup> {{ sc.footnote }}</div>
     </div>
   {% endfor %}

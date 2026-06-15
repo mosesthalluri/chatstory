@@ -52,6 +52,7 @@
       <div class="eyebrow">Your book</div>
       <div class="price"><span id="price">—</span></div>
       <p class="muted" id="price-note">Preview is free. You only pay to unlock the full book.</p>
+      <div id="pronoun-box" style="margin:16px 0"></div>
       <label style="display:block;margin:14px 0 6px">Where should we send updates?</label>
       <input type="email" id="email" placeholder="you@email.com" style="width:100%">
       <button class="btn primary" id="go" style="margin-top:16px;width:100%">Start my storybook</button>
@@ -129,6 +130,9 @@ function fmt(n){ return (n||0).toLocaleString(); }
 let TOTAL = 0;
 function priceFor(n){ return n>=TH.large?PRICES.large : n>=TH.medium?PRICES.medium : PRICES.small; }
 
+const PRON_OPTS = ["she/her","he/him","they/them"];
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+
 function showAnalysis(a){
   TOTAL = a.total_messages || 0;
   $('step-upload').style.display='none';
@@ -138,12 +142,25 @@ function showAnalysis(a){
   $('bars').innerHTML=a.per_year.map(([yr,ct])=>`<div class="bar-row"><div class="yr">${yr}</div><div class="bar"><span style="width:${Math.round(ct/peak*100)}%"></span></div><div class="ct">${fmt(ct)}</div></div>`).join('');
   $('price').textContent = cur+priceFor(TOTAL);
   $('price-note').textContent = `${fmt(TOTAL)} messages · preview is free, pay only to unlock the full book.`;
+  // Pronouns per person so the story narrates them correctly.
+  const senders = a.senders || [];
+  $('pronoun-box').innerHTML = '<div class="eyebrow" style="margin-bottom:8px">Who is who? (for the storytelling)</div>' +
+    senders.map(s=>`<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin:6px 0">
+      <span class="muted" style="overflow:hidden;text-overflow:ellipsis">${esc(s)}</span>
+      <select class="pron" data-sender="${esc(s)}" style="width:auto;min-width:130px">
+        ${PRON_OPTS.map(o=>`<option value="${o}">${o}</option>`).join('')}
+        <option value="">just their name</option>
+      </select>
+    </label>`).join('');
 }
 
 $('go').addEventListener('click',async()=>{
   $('error-box2').innerHTML='';
   const fd=new FormData();
   fd.append('email',$('email').value);
+  const pron={};
+  document.querySelectorAll('.pron').forEach(sel=>{ if(sel.value) pron[sel.dataset.sender]=sel.value; });
+  fd.append('pronouns', JSON.stringify(pron));
   $('go').disabled=true; $('go').textContent='Starting…';
   try{
     const r=await fetch(`/api/chatstory/${JOB}/start`,{method:'POST',body:fd});

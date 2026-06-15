@@ -517,7 +517,8 @@ async def chatstory_analyze(request: Request, file: UploadFile = File(...)):
 
 
 @app.post("/api/chatstory/{job_id}/start")
-async def chatstory_start(request: Request, job_id: str, email: str = Form("")):
+async def chatstory_start(request: Request, job_id: str, email: str = Form(""),
+                          pronouns: str = Form("")):
     status = jobs.load(job_id)
     if status is None:
         raise HTTPException(404, "Job not found")
@@ -528,8 +529,19 @@ async def chatstory_start(request: Request, job_id: str, email: str = Form("")):
     # total message volume.
     count = (status.stats or {}).get("total_messages", 0)
     price = _price_for_count(count)
+    # Pronouns per person (JSON: {"Name": "she/her"}) — used by the narrator.
+    pron = None
+    if pronouns:
+        try:
+            import json as _json
+            parsed_pron = _json.loads(pronouns)
+            if isinstance(parsed_pron, dict):
+                pron = {str(k): str(v) for k, v in parsed_pron.items() if v}
+        except Exception:
+            pron = None
     jobs.update(job_id, state="queued", progress=0, message="Queued",
-                price=price, user_email=(email.strip().lower() or status.user_email))
+                price=price, pronouns=pron,
+                user_email=(email.strip().lower() or status.user_email))
     await _enqueue_pipeline(job_id, "chatstory", run_pipeline, upload_path)
     return {"job_id": job_id, "status_url": f"/job/{job_id}", "price": price}
 

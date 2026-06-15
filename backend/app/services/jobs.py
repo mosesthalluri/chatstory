@@ -85,6 +85,7 @@ def update(
     date_from: str | None = None,
     date_to: str | None = None,
     price: int | None = None,
+    pronouns: dict | None = None,
 ) -> JobStatus | None:
     status = load(job_id)
     if status is None:
@@ -123,6 +124,8 @@ def update(
         status.date_to = date_to
     if price is not None:
         status.price = price
+    if pronouns is not None:
+        status.pronouns = pronouns
     save(status)
     return status
 

@@ -164,6 +164,8 @@ class JobStatus:
     date_from: Optional[str] = None
     date_to: Optional[str] = None
     price: Optional[int] = None
+    # ChatStory: {sender_name: "she/her"} used to narrate with correct pronouns.
+    pronouns: Optional[dict] = None
 
     def to_dict(self) -> dict:
         d = asdict(self)

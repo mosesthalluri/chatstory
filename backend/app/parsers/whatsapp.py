@@ -71,22 +71,59 @@ SYSTEM_PATTERNS = [
 ]
 
 
-def _try_parse_datetime(date_str: str, time_str: str) -> datetime | None:
-    """Try every reasonable date format until one works."""
-    candidates = [
-        # day first
-        "%d/%m/%y %H:%M", "%d/%m/%Y %H:%M",
-        "%d/%m/%y %H:%M:%S", "%d/%m/%Y %H:%M:%S",
-        "%d.%m.%y %H:%M", "%d.%m.%Y %H:%M",
-        "%d-%m-%y %H:%M", "%d-%m-%Y %H:%M",
-        # month first (US)
-        "%m/%d/%y %H:%M", "%m/%d/%Y %H:%M",
-        # 12-hour
-        "%d/%m/%y %I:%M %p", "%m/%d/%y %I:%M %p",
-        "%d/%m/%Y %I:%M %p", "%m/%d/%Y %I:%M %p",
-    ]
+# Date formats grouped by component order. We pick the order ONCE for the whole
+# file (see _detect_date_order) instead of guessing per line — otherwise an
+# ambiguous date like 06/12/26 is read inconsistently (June vs December),
+# scrambling the timeline and making the story feel out of order.
+_DMY_FORMATS = [
+    "%d/%m/%y %H:%M", "%d/%m/%Y %H:%M",
+    "%d/%m/%y %H:%M:%S", "%d/%m/%Y %H:%M:%S",
+    "%d.%m.%y %H:%M", "%d.%m.%Y %H:%M",
+    "%d-%m-%y %H:%M", "%d-%m-%Y %H:%M",
+    "%d/%m/%y %I:%M %p", "%d/%m/%Y %I:%M %p",
+    "%d.%m.%y %I:%M %p", "%d-%m-%y %I:%M %p",
+]
+_MDY_FORMATS = [
+    "%m/%d/%y %H:%M", "%m/%d/%Y %H:%M",
+    "%m/%d/%y %H:%M:%S", "%m/%d/%Y %H:%M:%S",
+    "%m.%d.%y %H:%M", "%m.%d.%Y %H:%M",
+    "%m-%d-%y %H:%M", "%m-%d-%Y %H:%M",
+    "%m/%d/%y %I:%M %p", "%m/%d/%Y %I:%M %p",
+    "%m.%d.%y %I:%M %p", "%m-%d-%y %I:%M %p",
+]
+# ISO is unambiguous; always try it.
+_ISO_FORMATS = ["%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"]
+
+
+def _detect_date_order(date_strings: list[str], has_ampm: bool) -> str:
+    """Decide whether the file uses day-first (dmy) or month-first (mdy) from
+    the data itself: a component > 12 can only be a day. Falls back to AM/PM as
+    a US/mm-dd hint, else day-first (international default)."""
+    dmy_votes = mdy_votes = 0
+    for ds in date_strings:
+        parts = re.split(r"[/.\-]", ds)
+        if len(parts) < 2:
+            continue
+        try:
+            a, b = int(parts[0]), int(parts[1])
+        except ValueError:
+            continue
+        if a > 12 and b <= 12:
+            dmy_votes += 1
+        elif b > 12 and a <= 12:
+            mdy_votes += 1
+    if mdy_votes > dmy_votes:
+        return "mdy"
+    if dmy_votes > mdy_votes:
+        return "dmy"
+    return "mdy" if has_ampm else "dmy"
+
+
+def _try_parse_datetime(date_str: str, time_str: str, order: str = "dmy") -> datetime | None:
+    """Parse using the file's detected component order first."""
     combined = f"{date_str} {time_str}".strip()
-    for fmt in candidates:
+    ordered = (_MDY_FORMATS + _DMY_FORMATS) if order == "mdy" else (_DMY_FORMATS + _MDY_FORMATS)
+    for fmt in _ISO_FORMATS + ordered:
         try:
             return datetime.strptime(combined, fmt)
         except ValueError:
@@ -145,6 +182,18 @@ def parse(path: Path) -> ParsedChat:
     current_msg: Message | None = None
     bad_date_count = 0
 
+    # Pre-scan: detect day-first vs month-first ONCE for the whole file.
+    date_strings: list[str] = []
+    has_ampm = False
+    for raw_line in lines:
+        mm = LINE_RE.match(raw_line.strip())
+        if mm:
+            date_strings.append(mm.group("date"))
+            if re.search(r"[AaPp][Mm]", mm.group("time")):
+                has_ampm = True
+    date_order = _detect_date_order(date_strings, has_ampm)
+    warnings.append(f"Detected date order: {'month/day' if date_order == 'mdy' else 'day/month'}")
+
     for line_num, raw_line in enumerate(lines, 1):
         line = raw_line.rstrip()
         if not line:
@@ -165,7 +214,7 @@ def parse(path: Path) -> ParsedChat:
         time_str = match.group("time")
         rest = match.group("rest")
 
-        dt = _try_parse_datetime(date_str, time_str)
+        dt = _try_parse_datetime(date_str, time_str, date_order)
         if dt is None:
             bad_date_count += 1
             current_msg = None

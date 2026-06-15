@@ -140,9 +140,12 @@ class Settings(BaseSettings):
     # (quality over speed, by design). Generous cap so big jobs aren't killed
     # mid-run; lower it if you want a hard stop sooner.
     QUEUE_JOB_TIMEOUT_SECONDS: int = 86400
-    # Per-scene LLM timeout for the faithful book's scene-setting line. On
-    # timeout we fall back to a deterministic grounded opener (never hangs).
+    # Per-scene LLM timeout for the faithful book's narration. On timeout we
+    # fall back to grounded deterministic prose (never hangs).
     FAITHFUL_SCENE_TIMEOUT_SECONDS: int = 120
+    # Max messages narrated per passage. Long sessions are split into several
+    # passages so nothing is dropped and prompts stay bounded.
+    FAITHFUL_MAX_SCENE_MESSAGES: int = 40
     # Rough per-job time used to estimate queue wait time shown to users.
     AVG_JOB_SECONDS: int = 600
 

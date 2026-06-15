@@ -64,8 +64,10 @@ async def run_pipeline(job_id: str, upload_path: Path) -> None:
         jobs.update(job_id, state="generating_story", progress=12,
                     message="Cleaning noise and finding scenes…", phases=phases)
 
+        s0 = jobs.load(job_id)
+        pronouns = s0.pronouns if s0 else None
         manuscript = await faithful.build_manuscript(
-            job_id, parsed, title=title, subtitle=subtitle)
+            job_id, parsed, title=title, subtitle=subtitle, pronouns=pronouns)
 
         # Make the stats available to the dashboard/preview immediately.
         jobs.update(job_id, stats=manuscript.get("stats"))
