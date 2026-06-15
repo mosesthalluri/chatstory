@@ -285,6 +285,17 @@ def _require_user(request: Request) -> dict:
     return user
 
 
+def _owns_job(request: Request, status) -> bool:
+    """True if the requester owns this job (case/space-insensitive email match)
+    or is an admin."""
+    if _is_admin(request):
+        return True
+    user = _current_user(request)
+    if not user or not status.user_email:
+        return False
+    return (user.get("email") or "").strip().lower() == (status.user_email or "").strip().lower()
+
+
 def _require_upload_account(request: Request) -> str:
     """Accounts are mandatory before uploading (V2). Returns the user's email
     or raises a 401 the upload UIs catch to send people to /welcome."""
@@ -539,9 +550,12 @@ async def chatstory_start(request: Request, job_id: str, email: str = Form(""),
                 pron = {str(k): str(v) for k, v in parsed_pron.items() if v}
         except Exception:
             pron = None
+    # Keep the ACCOUNT as the job owner (set at analyze) so cancel/retry
+    # ownership checks work — a different "send updates" email must not reassign
+    # ownership. Only fall back to the typed email if there's no owner yet.
+    owner = status.user_email or (email.strip().lower() or None)
     jobs.update(job_id, state="queued", progress=0, message="Queued",
-                price=price, pronouns=pron,
-                user_email=(email.strip().lower() or status.user_email))
+                price=price, pronouns=pron, user_email=owner)
     await _enqueue_pipeline(job_id, "chatstory", run_pipeline, upload_path)
     return {"job_id": job_id, "status_url": f"/job/{job_id}", "price": price}
 
@@ -769,9 +783,7 @@ async def user_retry_job(request: Request, job_id: str):
     status = jobs.load(job_id)
     if status is None:
         raise HTTPException(404, "Job not found")
-    user = _current_user(request)
-    is_owner = bool(user and status.user_email and user.get("email") == status.user_email)
-    if not (is_owner or _is_admin(request)):
+    if not _owns_job(request, status):
         raise HTTPException(403, "You can only retry your own exports.")
     upload_path = _find_uploaded_file(job_id)
     if upload_path is None:
@@ -792,9 +804,7 @@ async def user_cancel_job(request: Request, job_id: str):
     status = jobs.load(job_id)
     if status is None:
         raise HTTPException(404, "Job not found")
-    user = _current_user(request)
-    is_owner = bool(user and status.user_email and user.get("email") == status.user_email)
-    if not (is_owner or _is_admin(request)):
+    if not _owns_job(request, status):
         raise HTTPException(403, "You can only cancel your own exports.")
     if status.state in ("done", "failed", "cancelled"):
         return {"ok": True, "state": status.state}
