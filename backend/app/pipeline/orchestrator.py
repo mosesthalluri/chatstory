@@ -61,8 +61,21 @@ async def run_pipeline(job_id: str, upload_path: Path) -> None:
 
         phases[0]["status"] = "done"; phases[0]["progress"] = 100
         phases[1]["status"] = "in_progress"
-        jobs.update(job_id, state="generating_story", progress=12,
-                    message="Cleaning noise and finding scenes…", phases=phases)
+        jobs.update(job_id, state="generating_story", progress=10,
+                    message="Checking the AI model…", phases=phases)
+
+        # Verify the model actually responds BEFORE we generate — otherwise the
+        # whole book silently becomes placeholder fallback text.
+        from .. import llm
+        faithful._log(job_id, "Checking the AI model is responding…")
+        ok, detail = await llm.health_check()
+        if not ok:
+            raise ValueError(
+                "The AI model isn't responding, so the story can't be written. "
+                f"({detail}) Start your model (e.g. `ollama serve` and pull the "
+                "model in OLLAMA_MODEL_STRONG), or configure a Groq key, then retry.")
+        faithful._log(job_id, f"AI model OK ({detail}). Writing chapters…")
+        jobs.update(job_id, message="Cleaning noise and finding scenes…")
 
         s0 = jobs.load(job_id)
         pronouns = s0.pronouns if s0 else None

@@ -140,9 +140,10 @@ class Settings(BaseSettings):
     # (quality over speed, by design). Generous cap so big jobs aren't killed
     # mid-run; lower it if you want a hard stop sooner.
     QUEUE_JOB_TIMEOUT_SECONDS: int = 86400
-    # Per-scene LLM timeout for the faithful book's narration. On timeout we
-    # fall back to grounded deterministic prose (never hangs).
-    FAITHFUL_SCENE_TIMEOUT_SECONDS: int = 120
+    # Per-chapter LLM timeout for the faithful book's narration. Local models on
+    # modest GPUs are slow (cold load + long output), so this is generous to
+    # avoid spurious fallbacks; only a true stall trips it.
+    FAITHFUL_SCENE_TIMEOUT_SECONDS: int = 600
     # Max messages narrated per passage. Long episodes are split into several
     # passages so nothing is dropped and prompts stay bounded.
     FAITHFUL_MAX_SCENE_MESSAGES: int = 40

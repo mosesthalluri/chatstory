@@ -149,6 +149,30 @@ async def _ollama_complete(
             raise LLMError(f"Ollama returned an unexpected response: missing {e}")
 
 
+async def health_check(timeout: float = 180.0) -> tuple[bool, str]:
+    """Probe the configured LLM so callers can fail loudly (instead of silently
+    falling back to placeholder text) when the model isn't actually responding.
+
+    Returns (ok, detail). The first call also warms a cold local model, so the
+    timeout is generous. detail carries the error/sample for the UI.
+    """
+    try:
+        out = await asyncio.wait_for(
+            complete(
+                [{"role": "user", "content": "Reply with the single word: ok"}],
+                model_size="strong", temperature=0.0, max_tokens=5,
+            ),
+            timeout=timeout,
+        )
+        if out and out.strip():
+            return True, out.strip()[:80]
+        return False, "The model returned an empty response."
+    except asyncio.TimeoutError:
+        return False, f"No response within {int(timeout)}s (model may be loading or too slow)."
+    except Exception as e:  # noqa: BLE001
+        return False, str(e)[:200]
+
+
 async def complete(
     messages: list[dict],
     model_size: Literal["fast", "strong"] = "fast",

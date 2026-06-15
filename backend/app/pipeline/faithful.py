@@ -104,17 +104,20 @@ def _time_of_day_opener(hour: int) -> str:
 # ---------------------------------------------------------------------------
 
 _RULES = """HARD RULES:
+- Narrate WHAT THEY ACTUALLY TALKED ABOUT — the topics, news, questions,
+  decisions, plans, jokes and reactions in the messages. Every sentence must be
+  grounded in a real message.
 - Invent NOTHING. Do NOT add physical actions, gestures, facial expressions,
-  typing, phones, screens, rooms, weather, places, or any sensory detail that
-  the messages do not state. No "his thumbs flew across the screen", no imagined
-  feelings or motives. Narrate only what the messages actually show.
-- You MAY describe natural timing the timestamps reveal ("the next morning",
-  "an hour later", "after a long pause"), but do NOT print exact clock times.
-- Cover what happened across these messages, in order — what was said and how
-  the other replied — as a flowing story, NOT a "Name: text" transcript.
-- If a message is gibberish, a typo, or unclear, mention its role briefly
-  ("a playful one-liner") instead of quoting nonsense.
-- Use the names and pronouns given. Warm, specific, faithful."""
+  typing, phones, screens, rooms, weather, places, or feelings the messages do
+  not state. Forbidden examples: "her eyes lit up", "his thumbs flew across the
+  screen", "she smiled" — none of that is in a chat, so never write it.
+- Do NOT comment on how MANY messages were sent or how fast they replied as a
+  substitute for content. Tell what was said.
+- You MAY note natural timing the timestamps reveal ("the next morning", "an
+  hour later", "after a long pause"), but do NOT print exact clock times.
+- Write flowing prose, NOT a "Name: text" transcript.
+- If a single message is gibberish or a typo, skip it; do not quote nonsense.
+- Use the names and pronouns given. Warm, specific, faithful to the content."""
 
 CHAPTER_PROMPT = """You are writing one chapter of an immersive, TRUE story based
 on a real chat. Below are the ACTUAL messages of this episode, in order, each
@@ -184,15 +187,16 @@ def _fallback_title(window: list) -> str:
 
 
 def _deterministic_story(window: list) -> str:
-    """Grounded fallback when the model is unavailable — a plain summary, never
-    invented detail and never gibberish quotes."""
-    names = sorted({m.sender for m in window})
-    who = " and ".join(names) if names else "they"
-    span = ""
-    if window[0].timestamp.date() != window[-1].timestamp.date():
-        span = " over a day or so"
-    return (f"In this chapter{span}, {who} exchanged {len(window)} messages. "
-            f"The conversation is preserved in full in the editable copy.")
+    """Content-bearing fallback used only if the model fails for THIS chapter
+    after retries: a readable paraphrase of what was actually said (never a
+    message count, never invented detail). Quotes the real lines, lightly."""
+    parts: list[str] = []
+    for m in window:
+        text = " ".join(m.text.split()).strip().rstrip(".")
+        if len(text) < 2:
+            continue
+        parts.append(f'{m.sender} said, "{text}."')
+    return " ".join(parts) if parts else "A brief, quiet exchange passed between them."
 
 
 def _parse_title_story(text: str) -> tuple[str, str]:
@@ -219,24 +223,34 @@ def _parse_title_story(text: str) -> tuple[str, str]:
     return title.strip().strip('"').strip("'"), story.strip()
 
 
-async def _llm_prose(prompt: str, max_tokens: int = 1100) -> str | None:
-    try:
-        return await asyncio.wait_for(
-            llm.complete(
-                [{"role": "system", "content": _SYS}, {"role": "user", "content": prompt}],
-                model_size="strong", temperature=0.3, max_tokens=max_tokens,
-            ),
-            timeout=max(45, settings.FAITHFUL_SCENE_TIMEOUT_SECONDS),
-        )
-    except Exception:
-        return None
+async def _llm_prose(prompt: str, max_tokens: int = 1100, attempts: int = 2) -> str | None:
+    """Call the model with retries. Returns the text, or None if every attempt
+    failed/timed out (so the caller can fall back transparently)."""
+    timeout = max(60, settings.FAITHFUL_SCENE_TIMEOUT_SECONDS)
+    for attempt in range(attempts):
+        try:
+            out = await asyncio.wait_for(
+                llm.complete(
+                    [{"role": "system", "content": _SYS}, {"role": "user", "content": prompt}],
+                    model_size="strong", temperature=0.3, max_tokens=max_tokens,
+                ),
+                timeout=timeout,
+            )
+            if out and out.strip():
+                return out
+        except Exception:
+            pass
+    return None
 
 
-async def _narrate_chapter(windows: list[list], people: str) -> tuple[str, str]:
+async def _narrate_chapter(windows: list[list], people: str) -> tuple[str, str, bool]:
     """Narrate one episode (possibly split into windows) into a single chapter:
-    an event title + one flowing, grounded story. Returns (title, story)."""
+    an event title + one flowing, grounded story.
+    Returns (title, story, used_fallback) — used_fallback flags that the model
+    failed for at least one window so the caller can surface it."""
     title = ""
     parts: list[str] = []
+    used_fallback = False
     for j, window in enumerate(windows):
         dialogue = _format_dialogue_for_prompt(window)
         if j == 0:
@@ -244,15 +258,21 @@ async def _narrate_chapter(windows: list[list], people: str) -> tuple[str, str]:
             if resp:
                 t, s = _parse_title_story(resp)
                 title = t
-                parts.append(s or _deterministic_story(window))
+                if s:
+                    parts.append(s)
+                else:
+                    parts.append(_deterministic_story(window)); used_fallback = True
             else:
-                parts.append(_deterministic_story(window))
+                parts.append(_deterministic_story(window)); used_fallback = True
         else:
             resp = await _llm_prose(CONTINUE_PROMPT.format(people=people, dialogue=dialogue, rules=_RULES))
-            parts.append((resp or "").strip() or _deterministic_story(window))
+            if resp and resp.strip():
+                parts.append(resp.strip())
+            else:
+                parts.append(_deterministic_story(window)); used_fallback = True
     if not title or len(title) < 3 or title.lower().startswith("chapter"):
         title = _fallback_title(windows[0])
-    return title, "\n\n".join(p for p in parts if p)
+    return title, "\n\n".join(p for p in parts if p), used_fallback
 
 
 def _chunk(messages: list, max_n: int) -> list[list]:
@@ -437,6 +457,7 @@ async def build_manuscript(job_id: str, parsed, *, title: str, subtitle: str,
     }
 
     chapters: list[dict] = []
+    fallback_count = 0
     for i, episode in enumerate(episodes, 1):
         if _is_cancelling(job_id):
             _log(job_id, "Cancellation requested — stopping and keeping the partial preview.")
@@ -446,7 +467,9 @@ async def build_manuscript(job_id: str, parsed, *, title: str, subtitle: str,
         start = episode[0].timestamp
         end = episode[-1].timestamp
         windows = _chunk(episode, max_n)
-        ch_title, story = await _narrate_chapter(windows, people)
+        ch_title, story, used_fallback = await _narrate_chapter(windows, people)
+        if used_fallback:
+            fallback_count += 1
         chapters.append({
             "n": i,
             "title": ch_title,
@@ -462,9 +485,15 @@ async def build_manuscript(job_id: str, parsed, *, title: str, subtitle: str,
         jobs.update(job_id, progress=min(progress, 90),
                     message=f"Writing chapter {i} of {total}…")
         _save_manuscript(job_id, manuscript)
-        _log(job_id, f"Chapter {i}/{total}: “{ch_title}”")
+        _log(job_id, f"Chapter {i}/{total}: “{ch_title}”"
+             + ("  [AI was slow here — used a plain summary]" if used_fallback else "  [AI]"))
 
     manuscript["complete"] = not manuscript["cancelled"]
+    manuscript["fallback_count"] = fallback_count
     _save_manuscript(job_id, manuscript)
+    if fallback_count:
+        _log(job_id, f"Note: {fallback_count}/{len(chapters)} chapters fell back to a plain "
+                     f"summary because the model was slow/unresponsive. Consider a faster model "
+                     f"or re-run those.")
     _log(job_id, "Cancelled." if manuscript["cancelled"] else "All chapters narrated.")
     return manuscript
