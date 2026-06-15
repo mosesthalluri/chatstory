@@ -31,10 +31,26 @@ Multi-part text appears as a list of strings or dicts:
 """
 
 import json
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
 from ..models import Message, MessageKind, ParsedChat
+
+
+def _load_data(path: Path) -> dict:
+    """Load the Telegram export JSON from a .json file or a .zip (result.json,
+    ignoring any bundled media/other files)."""
+    if zipfile.is_zipfile(path):
+        from . import zip_utils
+        member = zip_utils.find_telegram_json(path)
+        if not member:
+            raise ValueError(
+                "This ZIP doesn't contain a Telegram export (result.json). "
+                "Export the chat as JSON and upload result.json or its ZIP.")
+        return json.loads(zip_utils.read_member_bytes(path, member))
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        return json.load(f)
 
 
 def _extract_text(text_field) -> str:
@@ -55,8 +71,7 @@ def _extract_text(text_field) -> str:
 
 
 def parse(path: Path) -> ParsedChat:
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        data = json.load(f)
+    data = _load_data(path)
 
     messages: list[Message] = []
     senders: set[str] = set()

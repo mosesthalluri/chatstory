@@ -107,26 +107,26 @@ def _classify(text: str) -> MessageKind:
 
 
 def _read_text(path: Path) -> str:
-    """Read .txt file, handling encoding gracefully.
+    """Read the WhatsApp chat text, handling encoding gracefully.
 
-    If it's a ZIP, extract _chat.txt from it.
+    If it's a ZIP, pick the real chat .txt (iOS `_chat.txt` OR Android
+    `WhatsApp Chat with <name>.txt`) by name + content, ignoring any bundled
+    .vcf contacts, media, or other files.
     """
     if zipfile.is_zipfile(path):
-        with zipfile.ZipFile(path) as z:
-            chat_files = [n for n in z.namelist() if n.endswith("_chat.txt") or n == "_chat.txt"]
-            if not chat_files:
-                raise ValueError("ZIP doesn't contain _chat.txt")
-            with z.open(chat_files[0]) as f:
-                raw = f.read()
-    else:
-        with open(path, "rb") as f:
-            raw = f.read()
+        from . import zip_utils
+        member = zip_utils.find_whatsapp_txt(path)
+        if not member:
+            raise ValueError(
+                "This ZIP doesn't contain a WhatsApp chat .txt — it may be a "
+                "folder of media/contacts. Re-export the chat and upload the "
+                "exported file.")
+        return zip_utils.read_member_text(path, member)
 
-    # Strip BOM if present
+    with open(path, "rb") as f:
+        raw = f.read()
     if raw.startswith(b"\xef\xbb\xbf"):
         raw = raw[3:]
-
-    # Try UTF-8, fall back to latin-1
     try:
         return raw.decode("utf-8")
     except UnicodeDecodeError:

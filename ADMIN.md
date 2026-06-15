@@ -17,7 +17,7 @@ preservation, not summarization**: quality over speed, on modest hardware
 
 | Product | Route | Needs an LLM? | Result |
 |---|---|---|---|
-| **ChatStory** (storybook) | `/chatstory` | Yes (Ollama/Groq) | Illustrated PDF — a **multi-volume collection** for long chats; paywalled |
+| **ChatStory** (faithful book) | `/chatstory` | Yes (Ollama/Groq) | The **whole chat**, scene by scene, nothing skipped except noise — **A4 PDF + editable DOCX**, with timestamp footnotes; paywalled |
 | **ChatWrapped** (recap) | `/chat-wrapped` | No | Story-style analytics web page + PDF |
 | **GiftBook / Gift Engine** | `/gift-engine` | Optional (personalization) | Evidence-matched gift ideas + PDF + JSON |
 | **Enhance a PDF** (clipart) | `/pdf-clipart` | Local Stable Diffusion (GPU) | Annotated PDF (free) |
@@ -50,7 +50,7 @@ backend (or use `stub`/`api`). ChatStory needs Ollama (local) or a Groq key.
    │ run_gift_engine_pipeline    (services/gift_engine.py)       │
    │ run_pdf_clipart_pipeline    (services/pdf_clipart_service)──┼──► pdf_clipart/ (standalone module)
    │ run_pipeline (ChatStory)    (pipeline/orchestrator.py)──────┼──► llm.py → Ollama/Groq
-   │   └─ volume_planner → multi-volume collection PDFs          │
+   │   └─ faithful (whole-chat scenes) → book_export → PDF + DOCX │
    └───────────────────────────────────────────────────────────┘
 ```
 
@@ -67,7 +67,8 @@ backend/app/
   main.py                 FastAPI routes + PRODUCTS registry
   settings.py             all config (loaded from backend/.env)
   llm.py                  Ollama/Groq client
-  pipeline/               stats, chunker, chapter_gen, volume_planner, orchestrator
+  pipeline/               faithful (whole-chat scenes), book_export (PDF+DOCX),
+                          orchestrator, stats, normalizer, parsers/zip_utils
   services/               jobs, queue, auth, payments, payment_provider, exports,
                           image_gen, pdf_render, chat_wrapped, gift_engine,
                           gift_llm, pdf_clipart_service, telegram_bot, notify, ops
@@ -110,10 +111,14 @@ publicly see `docs/04_GO_LIVE.md` (Cloudflare Tunnel).
    **`/welcome`** ("A small favor before we begin" — why an account is
    required). Sign up → lands on **`/journey`** (the 7-step explainer).
 2. **Upload** behind a **blocking terms modal** (must accept before any file is
-   sent). ChatStory uses a guided flow: upload → year-by-year volume bars →
-   date-range picker → live price estimate → email → start.
-3. **Processing** shows live **queue position + ETA**.
-4. **Preview** is free (`PREVIEW_CHAPTERS`); the rest is paywalled.
+   sent). ChatStory: upload → chat-at-a-glance + price → start. The **whole
+   chat is kept** (no date picking, no sampling).
+3. **Processing** shows live **queue position + ETA**. ChatStory adds a live
+   tracker: progress, a **generation log**, a **"Preview so far"** page
+   (`/job/{id}/live`, auto-refreshing) and a **Cancel** button — long faithful
+   books can take a while, so you can watch scenes appear and stop if quality
+   looks off (the partial book is kept).
+4. **Preview** is free (the first chapter); the rest is paywalled.
 5. **Pay & unlock** — manual UPI or Razorpay (§7).
 6. **Download** from the unlock page or **`/dashboard`** ("My stuff"), which
    tracks every job's status, payment, and downloads. An **"Enhance my PDF"**
@@ -150,16 +155,13 @@ Defaults preserve current behavior, so you can run with almost nothing set.
 | `GROQ_API_KEY` | — | needed if `USE_OLLAMA=false` |
 | `OLLAMA_MODEL_STRONG`, `OLLAMA_HOST`, `OLLAMA_NUM_CTX` | llama3.1:8b … 8192 | **keep `NUM_CTX≥8192`** or prompts truncate |
 | `GIFT_ENGINE_USE_LLM` | `true` | LLM-personalized gift ideas (falls back if down) |
-| `USE_GEMINI_IMAGES`, `GEMINI_API_KEY` | false | ChatStory images (clipart by default) |
-| `PDF_CLIPART_BACKEND` | `local` | `local` (SD/GPU) / `api` / `stub` (no GPU) |
+| `FAITHFUL_SCENE_TIMEOUT_SECONDS` | 120 | per-scene LLM timeout (falls back to a grounded opener) |
+| `QUEUE_JOB_TIMEOUT_SECONDS` | 86400 | generous so big faithful books aren't killed mid-run |
+| `PDF_CLIPART_BACKEND` | `local` | Enhance-PDF product: `local` (SD/GPU) / `api` / `stub` (no GPU) |
 | `PDF_CLIPART_MODEL` / `_MODEL_PATH` / `_STEPS` / `_MAX_PER_PAGE` | sd-turbo / — / 2 / 2 | reuse a local checkpoint via `_MODEL_PATH` |
-| `CHAPTERS_PER_BOOK`, `PREVIEW_CHAPTERS` | 0, 1 | 0 = auto-scale chapters |
-| **Multi-volume** | | **see §8** |
-| `PRICE_PER_VOLUME` | `0` | 0 = tiered pricing; >0 = volumes × this |
-| `VOLUME_CHAPTERS_TARGET` / `VOLUME_MAX` / `VOLUME_MIN_TO_SPLIT` | 5 / 6 / 6 | how the chat is split |
 | **Pricing** | | |
 | `CURRENCY_SYMBOL` | ₹ | |
-| `PRICE_SMALL/MEDIUM/LARGE`, `MSG_MEDIUM_MIN`, `MSG_LARGE_MIN` | 49/99/199, 2000, 10000 | tiered ChatStory price by selected message count |
+| `PRICE_SMALL/MEDIUM/LARGE`, `MSG_MEDIUM_MIN`, `MSG_LARGE_MIN` | 49/99/199, 2000, 10000 | tiered ChatStory price by total message volume |
 | `SINGLE_EXPORT_PRICE`, `COMBINED_EXPORT_PRICE` | 50, 75 | Wrapped / Gift unlocks |
 | **Payments** | | **see §7** |
 | `PAYMENT_PROVIDER` | `manual` | or `razorpay` |
@@ -203,23 +205,41 @@ PDF Clipart is **free** — no payment/unlock.
 
 ---
 
-## 8. Multi-volume collections
+## 8. The faithful ChatStory book
 
-Long chats become a **collection of era-based volumes** rather than one rushed
-PDF.
+ChatStory keeps the **whole conversation** — quality and completeness over
+speed. It does NOT sample or summarize.
 
-- **Splitting:** the planner cuts at the **longest silences** between chapters,
-  aiming for `VOLUME_CHAPTERS_TARGET` chapters/volume, capped at `VOLUME_MAX`.
-  Chats with fewer than `VOLUME_MIN_TO_SPLIT` chapters stay a single volume and
-  behave exactly as before (no dividers).
-- **Outputs:** a free watermarked **preview**; one **combined collection PDF**
-  (`full.pdf` — cover, wrapped numbers, timeline, shared language, then each
-  volume behind a divider page); and one **standalone PDF per volume**
-  (`full_vol1.pdf`, …). All available from the unlock/download page.
-- **Pricing:** `PRICE_PER_VOLUME > 0` → total = (volumes) × rate; the guided
-  flow shows an *estimate* and the **final price is set after planning**. With
-  `0` (default), tiered pricing applies and volumes are purely organizational.
-- **One payment unlocks the entire collection.**
+- **What's kept / removed:** every real text message is preserved verbatim.
+  Only noise is dropped — links, media/memes, system & deleted messages.
+- **Hybrid rendering:** each scene (a conversation session) gets 1-2
+  **grounded** scene-setting sentences (the only generated text; strict
+  no-invention prompt + a deterministic time-of-day fallback, so it never
+  hangs and never fabricates), followed by the **real dialogue** with per-line
+  times and a **timestamp footnote** for cross-referencing the export.
+- **Outputs** (`storage/output/<job>/`): `preview.pdf` (free — first chapter),
+  `full.pdf` (A4, print margins, page numbers), and `full.docx` (**editable**,
+  with real Word footnotes so the reader can fix any inaccuracy). Chapters are
+  by calendar month. A statistics page leads the book: messages per month, who
+  texted more, who initiated more.
+- **Live generation:** the manuscript is persisted incrementally to
+  `manuscript.json` with a `genlog.txt`; the tracker shows progress + log, a
+  live preview (`/job/{id}/live`), and a **Cancel** button (stops at the next
+  scene, keeps the partial book).
+- **Speed:** one LLM call per scene → big chats can take a long time *by
+  design*. `QUEUE_JOB_TIMEOUT_SECONDS` is generous; `FAITHFUL_SCENE_TIMEOUT_SECONDS`
+  bounds each scene.
+- **Pricing:** tiered by total message volume (`PRICE_SMALL/MEDIUM/LARGE`); one
+  payment unlocks the full PDF + DOCX.
+
+> Footnotes: the **DOCX** has true page-bottom Word footnotes; the **PDF** shows
+> the timestamp at the bottom of each scene plus page numbers (Chromium can't do
+> CSS page-bottom footnotes). Per-line times appear in both.
+
+> Note: WhatsApp/Instagram/Telegram **ZIP** exports often bundle unrelated files
+> (.vcf contacts, media). The parser finds the real chat member by name +
+> content (iOS `_chat.txt` *and* Android `WhatsApp Chat with ….txt`) and ignores
+> the rest; an unreadable ZIP gives a clear error instead of a bogus 1-day book.
 
 ---
 
@@ -230,8 +250,8 @@ PDF.
   message if the upload was already purged).
 - **Retry:** failure screens give users a Retry button
   (`POST /api/jobs/{id}/retry`, owner/admin only); admins can retry from
-  `/admin`. ChatStory render-only retries reuse the saved checkpoint (no LLM
-  re-spend).
+  `/admin`. ChatStory re-renders PDF + DOCX from the saved `manuscript.json`
+  (no LLM re-spend).
 - **Retention:** an hourly task purges uploads older than
   `AUTO_DELETE_AFTER_HOURS` (default 24). Generated PDFs + metadata are kept.
   `0` disables purging — the admin panel **alerts** you.

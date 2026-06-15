@@ -20,6 +20,7 @@ PARSERS = {
     "instagram_json": instagram,
     "instagram_zip": instagram,
     "telegram_json": telegram,
+    "telegram_zip": telegram,
     "generic_txt": generic,
 }
 
@@ -90,9 +91,16 @@ def parse_chat(path: Path) -> ParsedChat:
     """Parse a chat file. Returns a normalized, cleaned ParsedChat."""
     fmt = detect_format(path)
     if fmt == "unknown":
+        import zipfile
+        if zipfile.is_zipfile(path):
+            raise ValueError(
+                "We opened your ZIP but couldn't find a chat export inside "
+                "(only media/contacts/other files). Re-export the conversation "
+                "from WhatsApp/Instagram/Telegram and upload that file."
+            )
         raise ValueError(
             "Could not detect chat format. Supported: WhatsApp .txt or .zip, "
-            "Instagram JSON, Telegram JSON, or plain text with "
+            "Instagram JSON/ZIP, Telegram JSON/ZIP, or plain text with "
             "'Sender: message' lines."
         )
 

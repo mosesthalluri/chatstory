@@ -35,7 +35,7 @@
     <label class="drop-zone card" id="drop-zone">
       <span><strong id="drop-text">Drop your chat export here</strong><br>
         <span class="muted">or tap to choose. WhatsApp TXT/ZIP, Instagram/Telegram JSON. Max {{ max_size_mb }}MB.</span></span>
-      <input type="file" id="file-input" accept=".txt,.json,.zip">
+      <input type="file" id="file-input" accept=".txt,.json,.zip,text/plain,application/json,application/zip,application/octet-stream">
     </label>
     <div id="error-box"></div>
   </section>
@@ -104,9 +104,12 @@ const dz = $('drop-zone'), fi = $('file-input'), eb = $('error-box');
 dz.addEventListener('drop',e=>{ if(e.dataTransfer.files.length) analyze(e.dataTransfer.files[0]); });
 fi.addEventListener('change',e=>{ if(e.target.files.length) analyze(e.target.files[0]); });
 
+const DRIVE_HELP = 'Couldn’t read the file. If you picked it straight from Google Drive or another cloud app, download it to your phone first (open it once so it’s saved locally), then upload from your device storage. Also check your connection and try again.';
+
 async function analyze(file){
   eb.innerHTML='';
   if(!termsAccepted()){ openTerms(); return; }
+  if(!file || file.size===0){ eb.innerHTML=`<div class="error">${DRIVE_HELP}</div>`; return; }
   $('drop-text').textContent='Reading your chat…'; fi.disabled=true;
   const fd=new FormData(); fd.append('file',file);
   try{
@@ -115,7 +118,10 @@ async function analyze(file){
     const d=await r.json();
     if(!r.ok) throw new Error(d.detail||'Could not read that file');
     JOB=d.job_id; showAnalysis(d.analysis);
-  }catch(err){ eb.innerHTML=`<div class="error">${err.message}</div>`; $('drop-text').textContent='Drop your chat export here'; fi.disabled=false; }
+  }catch(err){
+    const msg=(err && err.name==='TypeError') ? DRIVE_HELP : err.message;
+    eb.innerHTML=`<div class="error">${msg}</div>`; $('drop-text').textContent='Drop your chat export here'; fi.disabled=false;
+  }
 }
 
 function fmt(n){ return (n||0).toLocaleString(); }

@@ -86,7 +86,9 @@ def _looks_like_telegram_json(sample: str, path: Path) -> bool:
 
 
 def _is_zip_with_chat(path: Path) -> tuple[bool, str | None]:
-    """Some platforms ship as ZIPs (WhatsApp, Instagram).
+    """Some platforms ship as ZIPs (WhatsApp, Instagram, Telegram), often
+    bundled with unrelated files (.vcf contacts, media, PDFs). We find the real
+    chat member by name + content sniff, ignoring everything else.
 
     Returns (True, suggested_format) if we recognize the contents,
     otherwise (False, None).
@@ -94,14 +96,13 @@ def _is_zip_with_chat(path: Path) -> tuple[bool, str | None]:
     if not _is_zip(path):
         return False, None
     try:
-        with zipfile.ZipFile(path) as z:
-            names = z.namelist()
-            # WhatsApp chat ZIPs always contain _chat.txt
-            if any(n.endswith("_chat.txt") or n == "_chat.txt" for n in names):
-                return True, "whatsapp_zip"
-            # Instagram message ZIPs contain message_*.json files
-            if any(re.search(r"message_\d+\.json$", n) for n in names):
-                return True, "instagram_zip"
+        from . import zip_utils
+        if zip_utils.find_whatsapp_txt(path):
+            return True, "whatsapp_zip"
+        if zip_utils.find_instagram_jsons(path):
+            return True, "instagram_zip"
+        if zip_utils.find_telegram_json(path):
+            return True, "telegram_zip"
     except zipfile.BadZipFile:
         return False, None
     return False, None
@@ -114,6 +115,12 @@ def detect_format(path: Path) -> str:
     is_zip, zip_format = _is_zip_with_chat(path)
     if is_zip and zip_format:
         return zip_format
+
+    # A ZIP we couldn't find a chat inside: do NOT fall through to the text
+    # parser (it would read the raw ZIP bytes as a chat and emit garbage —
+    # e.g. a single message dated today, looking like a "1-day" conversation).
+    if _is_zip(path):
+        return "unknown"
 
     sample = _read_sample(path)
     if not sample:

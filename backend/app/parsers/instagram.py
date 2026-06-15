@@ -128,23 +128,18 @@ def parse(path: Path) -> ParsedChat:
     warnings: list[str] = []
 
     if zipfile.is_zipfile(path):
-        with zipfile.ZipFile(path) as z:
-            json_files = sorted(
-                [n for n in z.namelist() if re.search(r"message_\d+\.json$", n)],
-                key=lambda n: int(re.search(r"message_(\d+)\.json", n).group(1)),
-            )
-            if not json_files:
-                # Maybe it's a single message.json
-                json_files = [n for n in z.namelist() if n.endswith(".json")]
-            if not json_files:
-                raise ValueError("ZIP doesn't contain Instagram message JSONs")
-            for name in json_files:
-                with z.open(name) as f:
-                    try:
-                        data = json.load(f)
-                        _parse_one_json(data, messages, senders)
-                    except json.JSONDecodeError as e:
-                        warnings.append(f"Could not parse {name}: {e}")
+        from . import zip_utils
+        json_files = zip_utils.find_instagram_jsons(path)
+        if not json_files:
+            raise ValueError(
+                "This ZIP doesn't contain Instagram message JSONs (message_1.json …). "
+                "Upload the message JSON, or the ZIP that contains it.")
+        for name in json_files:
+            try:
+                data = json.loads(zip_utils.read_member_bytes(path, name))
+                _parse_one_json(data, messages, senders)
+            except json.JSONDecodeError as e:
+                warnings.append(f"Could not parse {name}: {e}")
     else:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             data = json.load(f)

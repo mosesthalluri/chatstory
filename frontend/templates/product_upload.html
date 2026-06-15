@@ -33,7 +33,7 @@
         <strong id="drop-text">{% if product.accept == ".pdf" %}Drop your PDF here{% else %}Drop your chat export here{% endif %}</strong><br>
         <span class="muted">{% if product.accept == ".pdf" %}or tap to choose a PDF. Max {{ max_size_mb }}MB.{% else %}or tap to choose. WhatsApp TXT/ZIP, Instagram JSON/ZIP, Telegram JSON. Max {{ max_size_mb }}MB.{% endif %}</span>
       </span>
-      <input type="file" id="file-input" accept="{{ product.accept or '.txt,.json,.zip' }}">
+      <input type="file" id="file-input" accept="{% if product.accept %}{{ product.accept }},application/pdf,application/octet-stream{% else %}.txt,.json,.zip,text/plain,application/json,application/zip,application/octet-stream{% endif %}">
     </label>
     <aside class="card">
       <div class="eyebrow">Pipeline</div>
@@ -118,9 +118,12 @@ fileInput.addEventListener('change', e => {
   if (e.target.files.length) upload(e.target.files[0]);
 });
 
+const DRIVE_HELP = 'Couldn’t read the file. If you picked it straight from Google Drive or another cloud app, download it to your phone first (open it once so it’s saved locally), then upload from your device storage. Also check your connection and try again.';
+
 async function upload(file) {
   errorBox.innerHTML = '';
   if (!termsAccepted()) { openTerms(); return; }
+  if (!file || file.size === 0) { errorBox.innerHTML = `<div class="error">${DRIVE_HELP}</div>`; return; }
   dropText.textContent = 'Uploading...';
   fileInput.disabled = true;
   const formData = new FormData();
@@ -132,7 +135,10 @@ async function upload(file) {
     if (!resp.ok) throw new Error(data.detail || 'Upload failed');
     window.location.href = data.status_url;
   } catch (err) {
-    errorBox.innerHTML = `<div class="error">${err.message}</div>`;
+    // "Failed to fetch" (TypeError) = the file couldn't be read or the request
+    // never reached the server — almost always a cloud-file/connection issue.
+    const msg = (err && err.name === 'TypeError') ? DRIVE_HELP : err.message;
+    errorBox.innerHTML = `<div class="error">${msg}</div>`;
     dropText.textContent = initialDropText;
     fileInput.disabled = false;
   }
