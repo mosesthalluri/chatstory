@@ -143,9 +143,13 @@ class Settings(BaseSettings):
     # Per-scene LLM timeout for the faithful book's narration. On timeout we
     # fall back to grounded deterministic prose (never hangs).
     FAITHFUL_SCENE_TIMEOUT_SECONDS: int = 120
-    # Max messages narrated per passage. Long sessions are split into several
+    # Max messages narrated per passage. Long episodes are split into several
     # passages so nothing is dropped and prompts stay bounded.
     FAITHFUL_MAX_SCENE_MESSAGES: int = 40
+    # A new chapter begins only after a silence this long (hours). Keeps a night
+    # + the next morning in one episode, but starts a fresh chapter after a
+    # multi-day gap — so chapters read as coherent events, not per-message dumps.
+    FAITHFUL_CHAPTER_GAP_HOURS: int = 16
     # Rough per-job time used to estimate queue wait time shown to users.
     AVG_JOB_SECONDS: int = 600
 

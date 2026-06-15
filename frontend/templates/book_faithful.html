@@ -38,8 +38,11 @@
   .bar-row .v { width: 16mm; text-align: right; color: #888; }
 
   /* Chapters & scenes */
-  .chapter-title { page-break-before: always; font-size: 26pt; font-weight: normal;
-    margin: 0 0 8mm; color: #2a2a2a; border-bottom: 2px solid #b06a3a; padding-bottom: 3mm; }
+  .chapter { page-break-before: always; }
+  .chap-eyebrow { font-family: Arial, sans-serif; font-size: 9pt; letter-spacing: .35em;
+    text-transform: uppercase; color: #b06a3a; }
+  .chapter-title { font-size: 26pt; font-weight: normal;
+    margin: 1mm 0 8mm; color: #2a2a2a; border-bottom: 2px solid #b06a3a; padding-bottom: 3mm; }
   .scene { margin: 0 0 7mm; }
   .narrative p { margin: 0 0 3mm; text-align: justify; text-indent: 6mm; }
   .narrative p:first-child { text-indent: 0; }
@@ -98,18 +101,17 @@
 
 <!-- The book -->
 {% for ch in m.chapters %}
-  <h2 class="chapter-title">{{ ch.title }}</h2>
-  {% for sc in ch.scenes %}
-    <div class="scene">
-      <div class="narrative">
-        {% set paras = (sc.narrative or "").split("\n\n") %}
-        {% for para in paras %}
-          {% if para.strip() %}<p>{{ para.strip() }}{% if loop.last %}<sup>{{ sc.n }}</sup>{% endif %}</p>{% endif %}
-        {% endfor %}
-      </div>
-      <div class="footnote"><sup>{{ sc.n }}</sup> {{ sc.footnote }}</div>
+  <div class="chapter">
+    <div class="chap-eyebrow">Chapter {{ ch.n }}</div>
+    <h2 class="chapter-title">{{ ch.title }}</h2>
+    <div class="narrative">
+      {% set paras = (ch.narrative or "").split("\n\n") %}
+      {% for para in paras %}
+        {% if para.strip() %}<p>{{ para.strip() }}</p>{% endif %}
+      {% endfor %}
     </div>
-  {% endfor %}
+    <div class="footnote">{{ ch.footnote }}</div>
+  </div>
 {% endfor %}
 
 {% if preview %}

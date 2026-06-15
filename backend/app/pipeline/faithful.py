@@ -29,7 +29,6 @@ from collections import Counter
 from pathlib import Path
 
 from .. import llm
-from ..core.sessions import detect_sessions
 from ..models import Message, MessageKind
 from ..services import jobs
 from ..settings import OUTPUT_DIR, settings
@@ -101,30 +100,57 @@ def _time_of_day_opener(hour: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Immersive narration (AI retells each scene as prose — grounded, covers all)
+# Chapter narration (one event-titled, grounded story per episode)
 # ---------------------------------------------------------------------------
 
-NARRATE_PROMPT = """You are writing one passage of an immersive, TRUE story based
-on a real chat. Below are the ACTUAL messages of this scene, in order.
+_RULES = """HARD RULES:
+- Invent NOTHING. Do NOT add physical actions, gestures, facial expressions,
+  typing, phones, screens, rooms, weather, places, or any sensory detail that
+  the messages do not state. No "his thumbs flew across the screen", no imagined
+  feelings or motives. Narrate only what the messages actually show.
+- You MAY describe natural timing the timestamps reveal ("the next morning",
+  "an hour later", "after a long pause"), but do NOT print exact clock times.
+- Cover what happened across these messages, in order — what was said and how
+  the other replied — as a flowing story, NOT a "Name: text" transcript.
+- If a message is gibberish, a typo, or unclear, mention its role briefly
+  ("a playful one-liner") instead of quoting nonsense.
+- Use the names and pronouns given. Warm, specific, faithful."""
+
+CHAPTER_PROMPT = """You are writing one chapter of an immersive, TRUE story based
+on a real chat. Below are the ACTUAL messages of this episode, in order, each
+prefixed with when it was sent.
 
 == PEOPLE (use these names and pronouns) ==
 {people}
 
-== MESSAGES (your only source of truth) ==
+== MESSAGES (your ONLY source of truth) ==
 {dialogue}
 
-Write this scene as flowing, third-person narrative prose — like a novel — so a
-reader feels they were there. HARD RULES:
-- Cover EVERY message above, in order. Do not skip any exchange. You may quote a
-  few of their actual short phrases inside the prose.
-- Invent NOTHING. No events, feelings, places, motives, dates, or facts that the
-  messages don't show. If a line is ambiguous, narrate only what is stated.
-- Refer to each person by name and the pronouns given above.
-- Do NOT write timestamps, dates, or clock times (those are footnoted separately).
-- Do NOT use a chat/transcript format ("Name: text"). Turn it into real prose.
-- Keep it proportional: a few lines of chat -> a short paragraph; a long
-  exchange -> two or three paragraphs. Warm, specific, immersive.
-Write ONLY the prose."""
+{rules}
+
+Respond in EXACTLY this form:
+TITLE: a short, specific chapter title naming what actually happened here
+  (e.g. "The Cat at the Door", "A Long Silence", "Saying Goodbye"). 3-7 words,
+  no dates, based only on these messages.
+STORY: the chapter, as flowing third-person narrative prose."""
+
+CONTINUE_PROMPT = """Continue the SAME chapter of the story. Do not write a new
+title and do not recap — carry straight on from where it left off, using these
+further messages (in order).
+
+== PEOPLE ==
+{people}
+
+== MORE MESSAGES ==
+{dialogue}
+
+{rules}
+
+Respond with the continuing prose only (no title)."""
+
+_SYS = ("You are a careful biographer turning a real chat into an immersive, "
+        "third-person story. You narrate only what the messages show and never "
+        "invent physical detail, settings, or feelings.")
 
 
 def _people_block(senders: list[str], pronouns: dict | None) -> str:
@@ -136,58 +162,131 @@ def _people_block(senders: list[str], pronouns: dict | None) -> str:
     return "\n".join(out) if out else "- (the two people in this chat)"
 
 
-def _format_dialogue_for_prompt(lines: list[dict]) -> str:
-    return "\n".join(f"{ln['sender']}: {ln['text']}" for ln in lines)
+def _format_dialogue_for_prompt(window: list) -> str:
+    # Include a short date+time so the model can reference natural timing/gaps.
+    return "\n".join(
+        f"[{m.timestamp.strftime('%b %d, %H:%M')}] {m.sender}: {m.text}"
+        for m in window
+    )
 
 
-def _deterministic_narrative(lines: list[dict]) -> str:
-    """Readable fallback prose when the LLM is unavailable/timed out. Grounded
-    in the real words; not a raw transcript dump."""
-    parts = []
-    for ln in lines:
-        text = ln["text"].strip().rstrip(".")
-        if text:
-            parts.append(f'{ln["sender"]} wrote, "{text}."')
-    return " ".join(parts) if parts else "A quiet exchange passed between them."
+def _fallback_title(window: list) -> str:
+    hour = window[0].timestamp.hour
+    if hour < 5:
+        return "Late Into the Night"
+    if hour < 12:
+        return "A Morning Together"
+    if hour < 17:
+        return "An Afternoon Talk"
+    if hour < 21:
+        return "An Evening Together"
+    return "A Late-Night Talk"
 
 
-async def _narrate_scene(lines: list[dict], people: str, hour: int) -> str:
-    """Immersive AI narration of one scene, covering every message. Falls back
-    to grounded deterministic prose so a scene never blocks."""
-    prompt = NARRATE_PROMPT.format(people=people, dialogue=_format_dialogue_for_prompt(lines))
+def _deterministic_story(window: list) -> str:
+    """Grounded fallback when the model is unavailable — a plain summary, never
+    invented detail and never gibberish quotes."""
+    names = sorted({m.sender for m in window})
+    who = " and ".join(names) if names else "they"
+    span = ""
+    if window[0].timestamp.date() != window[-1].timestamp.date():
+        span = " over a day or so"
+    return (f"In this chapter{span}, {who} exchanged {len(window)} messages. "
+            f"The conversation is preserved in full in the editable copy.")
+
+
+def _parse_title_story(text: str) -> tuple[str, str]:
+    title, story, cur = "", "", None
+    buf: list[str] = []
+    for line in (text or "").splitlines():
+        up = line.strip().upper()
+        if up.startswith("TITLE:"):
+            if cur == "STORY":
+                story = "\n".join(buf).strip()
+            cur, buf = "TITLE", [line.split(":", 1)[1].strip()]
+        elif up.startswith("STORY:"):
+            if cur == "TITLE":
+                title = "\n".join(buf).strip()
+            cur, buf = "STORY", [line.split(":", 1)[1].strip()]
+        elif cur:
+            buf.append(line)
+    if cur == "TITLE":
+        title = "\n".join(buf).strip()
+    elif cur == "STORY":
+        story = "\n".join(buf).strip()
+    if not story and not title:
+        story = (text or "").strip()
+    return title.strip().strip('"').strip("'"), story.strip()
+
+
+async def _llm_prose(prompt: str, max_tokens: int = 1100) -> str | None:
     try:
-        resp = await asyncio.wait_for(
+        return await asyncio.wait_for(
             llm.complete(
-                [
-                    {"role": "system", "content": (
-                        "You are a careful novelist turning a real chat into immersive, "
-                        "third-person prose. You cover every message and invent nothing "
-                        "beyond what the messages show.")},
-                    {"role": "user", "content": prompt},
-                ],
-                model_size="strong", temperature=0.4, max_tokens=900,
+                [{"role": "system", "content": _SYS}, {"role": "user", "content": prompt}],
+                model_size="strong", temperature=0.3, max_tokens=max_tokens,
             ),
             timeout=max(45, settings.FAITHFUL_SCENE_TIMEOUT_SECONDS),
         )
     except Exception:
-        return _deterministic_narrative(lines)
-    text = (resp or "").strip()
-    if not text or len(text) < 10:
-        return _deterministic_narrative(lines)
-    # Guard: if the model returned transcript-style lines, fall back to prose.
-    transcripty = sum(1 for l in text.splitlines() if re.match(r"^\s*\S{1,30}:\s", l))
-    if transcripty >= max(3, len(text.splitlines()) // 2):
-        return _deterministic_narrative(lines)
-    return text
+        return None
 
 
-def _chunk_session(messages: list, max_n: int) -> list[list]:
-    """Split one session's messages into consecutive windows of <= max_n so a
-    very long session still narrates fully (nothing dropped) within bounded
-    prompts. Each window becomes its own footnoted passage."""
+async def _narrate_chapter(windows: list[list], people: str) -> tuple[str, str]:
+    """Narrate one episode (possibly split into windows) into a single chapter:
+    an event title + one flowing, grounded story. Returns (title, story)."""
+    title = ""
+    parts: list[str] = []
+    for j, window in enumerate(windows):
+        dialogue = _format_dialogue_for_prompt(window)
+        if j == 0:
+            resp = await _llm_prose(CHAPTER_PROMPT.format(people=people, dialogue=dialogue, rules=_RULES))
+            if resp:
+                t, s = _parse_title_story(resp)
+                title = t
+                parts.append(s or _deterministic_story(window))
+            else:
+                parts.append(_deterministic_story(window))
+        else:
+            resp = await _llm_prose(CONTINUE_PROMPT.format(people=people, dialogue=dialogue, rules=_RULES))
+            parts.append((resp or "").strip() or _deterministic_story(window))
+    if not title or len(title) < 3 or title.lower().startswith("chapter"):
+        title = _fallback_title(windows[0])
+    return title, "\n\n".join(p for p in parts if p)
+
+
+def _chunk(messages: list, max_n: int) -> list[list]:
+    """Split a chapter's messages into bounded windows so a very long episode
+    still narrates fully (nothing dropped) within bounded prompts."""
     if len(messages) <= max_n:
         return [messages]
     return [messages[i:i + max_n] for i in range(0, len(messages), max_n)]
+
+
+def _group_chapters(messages: list, gap_hours: int) -> list[list]:
+    """Group consecutive messages into chapter-sized EPISODES, starting a new
+    chapter only after a long silence (so a night + the next morning stay in one
+    chapter, but a multi-day gap begins a new one)."""
+    from datetime import timedelta
+    if not messages:
+        return []
+    groups: list[list] = []
+    cur = [messages[0]]
+    threshold = timedelta(hours=max(1, gap_hours))
+    for prev, m in zip(messages, messages[1:]):
+        if (m.timestamp - prev.timestamp) >= threshold:
+            groups.append(cur)
+            cur = []
+        cur.append(m)
+    groups.append(cur)
+    return groups
+
+
+def _chapter_citation(start, end) -> str:
+    if start.date() == end.date():
+        return f"{_date_label(start.date())}, {_time_range(start, end)}"
+    return (f"{start.day} {start.strftime('%b')} – {end.day} {end.strftime('%b %Y')}, "
+            f"{start.strftime('%H:%M')}–{end.strftime('%H:%M')}")
 
 
 # ---------------------------------------------------------------------------
@@ -312,17 +411,13 @@ async def build_manuscript(job_id: str, parsed, *, title: str, subtitle: str,
     senders = stats.get("senders") or sorted({m.sender for m in cleaned})
     people = _people_block(senders, pronouns)
 
-    # Split into scenes (sessions), then into bounded passages so even long
-    # sessions narrate fully without truncating the prompt — nothing dropped.
+    # Group into chapter-sized EPISODES (new chapter only after a long silence),
+    # so each chapter is a coherent event with its own title — not a per-message
+    # "X wrote / Y wrote" dump.
+    episodes = _group_chapters(cleaned, settings.FAITHFUL_CHAPTER_GAP_HOURS)
+    total = len(episodes)
     max_n = max(8, settings.FAITHFUL_MAX_SCENE_MESSAGES)
-    windows: list[list] = []
-    for session in detect_sessions(cleaned):
-        msgs = [m for m in session.messages if m.kind == MessageKind.TEXT]
-        if not msgs:
-            continue
-        windows.extend(_chunk_session(msgs, max_n))
-    total = len(windows)
-    _log(job_id, f"Cleaned chat: {len(cleaned)} messages → {total} passages to narrate.")
+    _log(job_id, f"Cleaned chat: {len(cleaned)} messages → {total} chapters to narrate.")
 
     first = cleaned[0].timestamp
     last = cleaned[-1].timestamp
@@ -342,50 +437,34 @@ async def build_manuscript(job_id: str, parsed, *, title: str, subtitle: str,
     }
 
     chapters: list[dict] = []
-    current_month = None
-    footnote_n = 0
-
-    for i, window in enumerate(windows, 1):
+    for i, episode in enumerate(episodes, 1):
         if _is_cancelling(job_id):
             _log(job_id, "Cancellation requested — stopping and keeping the partial preview.")
             manuscript["cancelled"] = True
             break
 
-        start = window[0].timestamp
-        end = window[-1].timestamp
-        lines = [
-            {"sender": m.sender, "text": m.text, "time": m.timestamp.strftime("%H:%M")}
-            for m in window
-        ]
-
-        month_label = start.strftime("%B %Y")
-        if month_label != current_month:
-            current_month = month_label
-            chapters.append({"title": month_label, "scenes": []})
-            manuscript["chapters"] = chapters
-
-        footnote_n += 1
-        narrative = await _narrate_scene(lines, people, start.hour)
-        scene = {
-            "n": footnote_n,
+        start = episode[0].timestamp
+        end = episode[-1].timestamp
+        windows = _chunk(episode, max_n)
+        ch_title, story = await _narrate_chapter(windows, people)
+        chapters.append({
+            "n": i,
+            "title": ch_title,
             "date": _date_label(start.date()),
             "time_range": _time_range(start, end),
-            "narrative": narrative,
-            "footnote": f"{_date_label(start.date())}, {_time_range(start, end)}",
-        }
-        chapters[-1]["scenes"].append(scene)
+            "narrative": story,
+            "footnote": _chapter_citation(start, end),
+        })
+        manuscript["chapters"] = chapters
         manuscript["scene_done"] = i
 
-        # Update progress/log every passage (cheap) for a responsive tracker;
-        # persist the manuscript every few (keeps the live preview fresh).
         progress = 15 + int(75 * i / total) if total else 90
         jobs.update(job_id, progress=min(progress, 90),
-                    message=f"Narrating passage {i} of {total}…")
-        if i % 3 == 0 or i == total:
-            _save_manuscript(job_id, manuscript)
-            _log(job_id, f"Passage {i}/{total} narrated ({chapters[-1]['title']}).")
+                    message=f"Writing chapter {i} of {total}…")
+        _save_manuscript(job_id, manuscript)
+        _log(job_id, f"Chapter {i}/{total}: “{ch_title}”")
 
     manuscript["complete"] = not manuscript["cancelled"]
     _save_manuscript(job_id, manuscript)
-    _log(job_id, "Cancelled." if manuscript["cancelled"] else "All passages narrated.")
+    _log(job_id, "Cancelled." if manuscript["cancelled"] else "All chapters narrated.")
     return manuscript
