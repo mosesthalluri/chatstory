@@ -470,17 +470,14 @@ def _price_for_count(count: int) -> int:
 
 @app.get("/chatstory", response_class=HTMLResponse)
 async def chatstory_page(request: Request):
-    # Guided storybook flow: upload -> see chat volume -> pick a date range ->
-    # see the price -> start. (Posts to /api/chatstory/analyze then /start.)
+    # Faithful flow: upload -> see the chat at a glance + price -> start.
+    # The whole chat is kept (no date picking, no sampling).
     return ui_env.get_template("chatstory_start.html").render(
         max_size_mb=settings.MAX_UPLOAD_SIZE_MB,
         currency=settings.CURRENCY_SYMBOL,
         user=_current_user(request),
         prices={"small": settings.PRICE_SMALL, "medium": settings.PRICE_MEDIUM, "large": settings.PRICE_LARGE},
         thresholds={"medium": settings.MSG_MEDIUM_MIN, "large": settings.MSG_LARGE_MIN},
-        per_volume={"price": settings.PRICE_PER_VOLUME,
-                    "divisor": max(1, settings.MSG_LARGE_MIN // 2),
-                    "max": settings.VOLUME_MAX},
     )
 
 
@@ -515,35 +512,24 @@ async def chatstory_analyze(request: Request, file: UploadFile = File(...)):
         "per_year": [(y, round(c * scale)) for y, c in sorted(per_year.items())],
         "per_month": {ym: round(c * scale) for ym, c in sorted(per_month.items())},
     }
-    jobs.update(job_id, state="ready", message="Choose your date range", stats=analysis)
+    jobs.update(job_id, state="ready", message="Ready to start", stats=analysis)
     return {"job_id": job_id, "analysis": analysis}
 
 
 @app.post("/api/chatstory/{job_id}/start")
-async def chatstory_start(request: Request, job_id: str,
-                          date_from: str = Form(""), date_to: str = Form(""),
-                          email: str = Form("")):
+async def chatstory_start(request: Request, job_id: str, email: str = Form("")):
     status = jobs.load(job_id)
     if status is None:
         raise HTTPException(404, "Job not found")
     upload_path = _find_uploaded_file(job_id)
     if upload_path is None:
         raise HTTPException(404, "Upload expired — please upload again.")
-    # Count selected messages from the stored monthly histogram (no re-parse).
-    per_month = (status.stats or {}).get("per_month", {})
-    selected = sum(c for ym, c in per_month.items()
-                   if (not date_from or ym >= date_from[:7]) and (not date_to or ym <= date_to[:7]))
-    count = selected or (status.stats or {}).get("total_messages", 0)
-    # When per-volume pricing is on, show an ESTIMATE now (final price is set
-    # from the real volume count once the collection is planned).
-    if settings.PRICE_PER_VOLUME > 0:
-        from .pipeline.volume_planner import estimate_volume_count
-        price = estimate_volume_count(count) * settings.PRICE_PER_VOLUME
-    else:
-        price = _price_for_count(count)
+    # The whole chat is kept (no date window). Price is the tier for the chat's
+    # total message volume.
+    count = (status.stats or {}).get("total_messages", 0)
+    price = _price_for_count(count)
     jobs.update(job_id, state="queued", progress=0, message="Queued",
-                date_from=date_from or None, date_to=date_to or None, price=price,
-                user_email=(email.strip().lower() or status.user_email))
+                price=price, user_email=(email.strip().lower() or status.user_email))
     await _enqueue_pipeline(job_id, "chatstory", run_pipeline, upload_path)
     return {"job_id": job_id, "status_url": f"/job/{job_id}", "price": price}
 
@@ -786,6 +772,25 @@ async def user_retry_job(request: Request, job_id: str):
     return {"ok": True, "status_url": status_url}
 
 
+@app.post("/api/jobs/{job_id}/cancel")
+async def user_cancel_job(request: Request, job_id: str):
+    """Cooperatively cancel a running ChatStory generation (owner/admin). The
+    faithful builder stops at the next scene boundary and keeps the partial
+    preview so the user can still see what was written."""
+    status = jobs.load(job_id)
+    if status is None:
+        raise HTTPException(404, "Job not found")
+    user = _current_user(request)
+    is_owner = bool(user and status.user_email and user.get("email") == status.user_email)
+    if not (is_owner or _is_admin(request)):
+        raise HTTPException(403, "You can only cancel your own exports.")
+    if status.state in ("done", "failed", "cancelled"):
+        return {"ok": True, "state": status.state}
+    jobs.update(job_id, state="cancelling", message="Cancelling… finishing the current scene.")
+    ops.record(f"User cancelled job {job_id[:8]}", "warning")
+    return {"ok": True, "state": "cancelling"}
+
+
 @app.post("/admin/jobs/{job_id}/unlock")
 async def admin_unlock_job(request: Request, job_id: str):
     _require_admin(request)
@@ -889,6 +894,19 @@ def _job_status_payload(request: Request, job_id: str) -> dict:
         snap = job_queue.snapshot()
         payload["queue_position"] = pos
         payload["eta_minutes"] = max(1, round((pos + snap["running_count"]) * settings.AVG_JOB_SECONDS / 60))
+    # Live tracker for the faithful ChatStory book: generation log tail, scene
+    # progress, and whether a partial preview can be opened mid-run.
+    if s.product in (None, "chatstory"):
+        from .pipeline import faithful
+        man = faithful.load_manuscript(job_id)
+        if man is not None:
+            payload["scene_done"] = man.get("scene_done", 0)
+            payload["scene_total"] = man.get("scene_total", 0)
+            payload["has_live_preview"] = bool(man.get("chapters"))
+        log = faithful.gen_log_tail(job_id, 25)
+        if log:
+            payload["gen_log"] = log
+        payload["docx_available"] = (OUTPUT_DIR / job_id / "full.docx").exists()
     return payload
 
 
@@ -1043,6 +1061,47 @@ async def download_chatstory_full(request: Request, job_id: str):
     if path is None:
         raise HTTPException(404, "Full PDF not ready")
     return _pdf_attachment(path, "chatstory_full.pdf")
+
+
+@app.get("/download/chatstory/{job_id}/docx")
+async def download_chatstory_docx(request: Request, job_id: str):
+    if not _has_unlock(request, job_id):
+        return RedirectResponse(f"/job/{job_id}", status_code=303)
+    path = OUTPUT_DIR / job_id / "full.docx"
+    if not path.exists():
+        raise HTTPException(404, "DOCX not ready")
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename="chatstory.docx",
+        headers={"Content-Disposition": 'attachment; filename="chatstory.docx"'},
+    )
+
+
+@app.get("/job/{job_id}/live", response_class=HTMLResponse)
+async def chatstory_live_preview(job_id: str):
+    """Live preview of the faithful book WHILE it generates (auto-refreshes).
+    Reads the incrementally-persisted manuscript."""
+    from .pipeline import faithful, book_export
+    if jobs.load(job_id) is None:
+        raise HTTPException(404, "Job not found")
+    man = faithful.load_manuscript(job_id)
+    if man is None:
+        return HTMLResponse(
+            "<meta http-equiv='refresh' content='5'>"
+            "<body style='font-family:sans-serif;padding:40px'>"
+            "<h2>Preparing your preview…</h2><p>Scenes will appear here as they're written. "
+            "This page refreshes automatically.</p></body>")
+    done = man.get("scene_done", 0); total = man.get("scene_total", 0)
+    refresh = "" if man.get("complete") or man.get("cancelled") else "<meta http-equiv='refresh' content='8'>"
+    banner = (
+        f"<div style='position:fixed;top:0;left:0;right:0;background:#b06a3a;color:#fff;"
+        f"font-family:sans-serif;padding:8px 14px;z-index:9'>Live preview — scene {done} of {total} "
+        f"{'· complete' if man.get('complete') else ('· cancelled' if man.get('cancelled') else '· still writing, refreshes automatically')}"
+        f" &nbsp; <a style='color:#fff' href='/job/{job_id}'>back to tracker</a></div>"
+        f"<div style='height:42px'></div>")
+    body = book_export.render_faithful_html(man, preview=False)
+    return HTMLResponse(refresh + banner + body)
 
 
 @app.get("/download/chatstory/{job_id}/volume/{n}")

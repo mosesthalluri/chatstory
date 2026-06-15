@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{{ m.title }}</title>
+<style>
+  /* A4, print-safe margins */
+  @page { size: A4; margin: 18mm 16mm 20mm 16mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Georgia, 'Times New Roman', serif;
+    color: #232323; line-height: 1.55; font-size: 11pt;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  .page-break { page-break-after: always; }
+
+  /* Cover */
+  .cover { text-align: center; padding: 60mm 10mm 0; page-break-after: always; }
+  .cover .eyebrow { letter-spacing: .35em; text-transform: uppercase;
+    font-size: 10pt; color: #b06a3a; font-family: Arial, sans-serif; }
+  .cover h1 { font-size: 40pt; margin: 8mm 0 4mm; font-weight: normal; }
+  .cover .sub { font-size: 16pt; color: #555; font-style: italic; }
+  .cover .range { margin-top: 10mm; letter-spacing: .2em; color: #777;
+    font-family: Arial, sans-serif; font-size: 10pt; text-transform: uppercase; }
+  .cover .note { margin-top: 22mm; color: #999; font-size: 9.5pt; font-family: Arial, sans-serif; }
+
+  /* Statistics */
+  .stats { page-break-after: always; }
+  h2.section { font-size: 22pt; font-weight: normal; border-bottom: 1px solid #ddd;
+    padding-bottom: 3mm; margin: 0 0 6mm; }
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm 10mm; margin-bottom: 8mm; }
+  .stat { background: #f6f1ea; border-radius: 3mm; padding: 4mm 5mm; }
+  .stat .big { font-size: 20pt; } .stat .lab { color: #777; font-size: 9pt;
+    font-family: Arial, sans-serif; text-transform: uppercase; letter-spacing: .08em; }
+  .bar-row { display: flex; align-items: center; gap: 4mm; margin: 1.5mm 0; font-size: 9.5pt; }
+  .bar-row .k { width: 26mm; color: #555; font-family: Arial, sans-serif; }
+  .bar-row .bar { flex: 1; height: 4mm; background: #eee; border-radius: 2mm; overflow: hidden; }
+  .bar-row .bar > span { display: block; height: 100%; background: #b06a3a; }
+  .bar-row .v { width: 16mm; text-align: right; color: #888; }
+
+  /* Chapters & scenes */
+  .chapter-title { page-break-before: always; font-size: 26pt; font-weight: normal;
+    margin: 0 0 8mm; color: #2a2a2a; border-bottom: 2px solid #b06a3a; padding-bottom: 3mm; }
+  .scene { margin: 0 0 7mm; }
+  .scene-setting { font-style: italic; color: #5a4a3a; margin: 0 0 2.5mm; }
+  .scene-setting sup { color: #b06a3a; font-style: normal; }
+  .line { margin: 0 0 1mm; display: flex; gap: 3mm; align-items: baseline; }
+  .line .who { font-weight: bold; white-space: nowrap; }
+  .line .txt { flex: 1; }
+  .line .t { color: #b3b3b3; font-size: 7.5pt; font-family: Arial, sans-serif; white-space: nowrap; }
+  .footnote { border-top: 1px solid #e6e0d8; margin-top: 2.5mm; padding-top: 1.2mm;
+    font-size: 8.5pt; color: #8a8a8a; font-family: Arial, sans-serif; }
+  .footnote sup { color: #b06a3a; }
+
+  .preview-banner { background: #b06a3a; color: #fff; text-align: center;
+    padding: 4mm; font-family: Arial, sans-serif; margin-top: 10mm; border-radius: 2mm; }
+  .watermark { position: fixed; top: 45%; left: 0; right: 0; text-align: center;
+    font-size: 60pt; color: rgba(176,106,58,.08); transform: rotate(-20deg);
+    font-family: Arial, sans-serif; text-transform: uppercase; letter-spacing: .2em; }
+</style>
+</head>
+<body>
+{% if preview %}<div class="watermark">Preview</div>{% endif %}
+
+<!-- Cover -->
+<div class="cover">
+  <div class="eyebrow">A Chat, Kept Whole</div>
+  <h1>{{ m.title }}</h1>
+  <div class="sub">{{ m.subtitle }}</div>
+  <div class="range">{{ m.date_range }}</div>
+  <div class="note">Every conversation preserved · timestamps in the footnotes</div>
+</div>
+
+<!-- Statistics -->
+{% set s = m.stats %}
+<div class="stats">
+  <h2 class="section">The Numbers</h2>
+  <div class="stat-grid">
+    <div class="stat"><div class="big">{{ "{:,}".format(s.total_messages) }}</div><div class="lab">Messages kept</div></div>
+    <div class="stat"><div class="big">{{ s.days_active }}</div><div class="lab">Days you talked</div></div>
+    <div class="stat"><div class="big">{{ s.most_texts }}</div><div class="lab">Texted the most</div></div>
+    <div class="stat"><div class="big">{{ s.most_initiations }}</div><div class="lab">Started chats most</div></div>
+  </div>
+
+  <h3 style="font-weight:normal">Who texted more</h3>
+  {% set maxp = (s.per_sender.values()|list|max) if s.per_sender else 1 %}
+  {% for who, c in s.per_sender.items() %}
+    <div class="bar-row"><div class="k">{{ who }}</div><div class="bar"><span style="width:{{ (100*c/maxp)|round }}%"></span></div><div class="v">{{ "{:,}".format(c) }}</div></div>
+  {% endfor %}
+
+  <h3 style="font-weight:normal;margin-top:6mm">Who started conversations more</h3>
+  {% set maxi = (s.initiations.values()|list|max) if s.initiations else 1 %}
+  {% for who, c in s.initiations.items() %}
+    <div class="bar-row"><div class="k">{{ who }}</div><div class="bar"><span style="width:{{ (100*c/maxi)|round }}%"></span></div><div class="v">{{ "{:,}".format(c) }}</div></div>
+  {% endfor %}
+
+  <h3 style="font-weight:normal;margin-top:6mm">Messages by month</h3>
+  {% set maxm = (s.per_month|map(attribute='count')|list|max) if s.per_month else 1 %}
+  {% for row in s.per_month %}
+    <div class="bar-row"><div class="k">{{ row.label }}</div><div class="bar"><span style="width:{{ (100*row.count/maxm)|round }}%"></span></div><div class="v">{{ "{:,}".format(row.count) }}</div></div>
+  {% endfor %}
+</div>
+
+<!-- The book -->
+{% for ch in m.chapters %}
+  <h2 class="chapter-title">{{ ch.title }}</h2>
+  {% for sc in ch.scenes %}
+    <div class="scene">
+      {% if sc.setting %}<div class="scene-setting">{{ sc.setting }}<sup>{{ sc.n }}</sup></div>{% endif %}
+      {% for l in sc.lines %}
+        <div class="line"><span class="who">{{ l.sender }}</span><span class="txt">{{ l.text }}</span><span class="t">{{ l.time }}</span></div>
+      {% endfor %}
+      <div class="footnote"><sup>{{ sc.n }}</sup> {{ sc.footnote }}</div>
+    </div>
+  {% endfor %}
+{% endfor %}
+
+{% if preview %}
+<div class="preview-banner">
+  This is a free preview. Unlock the full book — every scene, both PDF and an
+  editable DOCX — to keep the whole conversation.
+</div>
+{% endif %}
+</body>
+</html>

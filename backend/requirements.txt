@@ -18,6 +18,9 @@ playwright==1.48.0
 # Emoji parsing for the stats / wrapped engines
 emoji==2.14.0
 
+# DOCX export for the faithful ChatStory book (editable output with footnotes)
+python-docx==1.1.2
+
 # NOTE: The LLM client (app/llm.py) talks to Groq and Ollama directly over
 # HTTP via httpx, so no SDK packages are required. pandas/numpy/python-magic
 # were previously listed but are never imported anywhere in the app — they

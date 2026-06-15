@@ -3,21 +3,27 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Processing · ChatStory</title>
+<title>Your book is being written · ChatStory</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/app.css">
+<style>
+  .genlog { background:#0d0e13; border:1px solid rgba(255,255,255,.1); border-radius:10px;
+    padding:12px 14px; height:220px; overflow-y:auto; font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:12px; line-height:1.55; color:#b8bbc8; white-space:pre-wrap; }
+  .genlog .l { margin:0; }
+</style>
 </head>
 <body>
 <main class="shell">
   <header class="topbar">
     <a class="brand" href="/">ChatStory</a>
-    <nav class="nav"><a href="/">Home</a></nav>
+    <nav class="nav"><a href="/">Home</a><a href="/dashboard">My stuff</a></nav>
   </header>
 
   <section class="hero">
-    <div class="eyebrow">Processing</div>
-    <h1 id="title">Building your result.</h1>
-    <p class="lead" id="message">Your export is moving through the pipeline.</p>
+    <div class="eyebrow">Writing your book</div>
+    <h1 id="title">Keeping every word.</h1>
+    <p class="lead" id="message">We're writing your chat scene by scene — nothing is skipped except links and media. Large chats take a while; that's the point.</p>
   </section>
 
   <section class="grid-2">
@@ -25,12 +31,14 @@
       <div class="label">Progress</div>
       <div class="progress" style="margin:18px 0 10px"><span id="bar"></span></div>
       <div class="muted" id="pct">0%</div>
-      <div class="steps" id="steps"></div>
+      <div class="steps" id="steps" style="margin-bottom:14px"></div>
+      <div class="label">Live log</div>
+      <div class="genlog" id="genlog"><p class="l muted">Waiting for the first scenes…</p></div>
     </div>
     <div class="card">
       <div class="eyebrow">Result</div>
-      <h2 id="result-title">Waiting for completion</h2>
-      <p class="muted" id="result-copy">Actions will appear when the job is ready.</p>
+      <h2 id="result-title">Working…</h2>
+      <p class="muted" id="result-copy">A live preview and a cancel option appear as soon as the first scenes are written.</p>
       <div class="chip-row" id="actions"></div>
       <div id="error-box"></div>
     </div>
@@ -39,16 +47,17 @@
 
 <script>
 const jobId = "{{ job_id }}";
-const currency = "{{ currency }}";
-const price = "{{ price }}";
 const supportEmail = "{{ support_email }}";
+const TERMINAL = ['done','failed','cancelled'];
 let timer = null;
 
 async function poll() {
-  const resp = await fetch(`/api/status/${jobId}`);
-  const data = await resp.json();
-  render(data);
-  if (data.state === 'done' || data.state === 'failed') clearInterval(timer);
+  try {
+    const resp = await fetch(`/api/status/${jobId}`);
+    const data = await resp.json();
+    render(data);
+    if (TERMINAL.includes(data.state)) clearInterval(timer);
+  } catch (e) { /* transient; keep polling */ }
 }
 
 async function retryJob(btn) {
@@ -57,50 +66,95 @@ async function retryJob(btn) {
     const r = await fetch(`/api/jobs/${jobId}/retry`, { method: 'POST' });
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail || 'Could not retry');
-    window.location.href = d.status_url || `/job/${jobId}`;
+    location.reload();
   } catch (e) {
     btn.disabled = false; btn.textContent = 'Try again';
     document.getElementById('error-box').innerHTML += `<div class="error">${e.message}</div>`;
   }
 }
 
+async function cancelJob(btn) {
+  if (!confirm('Stop generating? We\'ll keep whatever has been written so far as a partial preview.')) return;
+  btn.disabled = true; btn.textContent = 'Cancelling…';
+  try {
+    const r = await fetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
+    if (!r.ok) { const d = await r.json(); throw new Error(d.detail || 'Could not cancel'); }
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Cancel generation';
+    document.getElementById('error-box').innerHTML += `<div class="error">${e.message}</div>`;
+  }
+}
+
 function render(s) {
-  document.getElementById('title').textContent = s.state === 'done' ? 'Your PDF is ready.' : stateTitle(s.state);
-  document.getElementById('message').textContent = s.message || '';
+  const title = document.getElementById('title');
+  const msg = document.getElementById('message');
   document.getElementById('bar').style.width = (s.progress || 0) + '%';
   document.getElementById('pct').textContent = (s.progress || 0) + '%';
   document.getElementById('steps').innerHTML = (s.phases || []).map(p =>
     `<div class="step ${p.status === 'in_progress' ? 'active' : p.status}"><span>${p.name}</span><span>${p.status}</span></div>`
   ).join('');
-  if (s.state === 'done') {
-    document.getElementById('result-title').textContent = 'Export complete';
-    if (s.unlocked) {
-      document.getElementById('result-copy').textContent = 'Download your full storybook PDF.';
-      document.getElementById('actions').innerHTML = `<a class="btn primary" href="/download/chatstory/${jobId}/full">Download full PDF</a><a class="btn secondary" href="/preview/${jobId}">Preview</a><a class="btn secondary" href="/pdf-clipart">✨ Enhance my PDF</a>`;
-    } else {
-      document.getElementById('result-copy').textContent = 'Preview is free. Unlock for the full PDF after Paytm verification.';
-      document.getElementById('actions').innerHTML = `<a class="btn secondary" href="/preview/${jobId}">Open preview</a><a class="btn primary" href="/unlock/chatstory/${jobId}">Unlock full book</a>`;
-    }
+
+  // Live generation log
+  if (s.gen_log && s.gen_log.length) {
+    const box = document.getElementById('genlog');
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 30;
+    box.innerHTML = s.gen_log.map(l => `<p class="l">${l.replace(/</g,'&lt;')}</p>`).join('');
+    if (atBottom) box.scrollTop = box.scrollHeight;
   }
-  if (s.state === 'failed') {
-    document.getElementById('title').textContent = 'Generation failed';
+
+  const scenes = (s.scene_total ? ` · scene ${s.scene_done||0} of ${s.scene_total}` : '');
+
+  if (s.state === 'done') {
+    title.textContent = 'Your book is ready.';
+    msg.textContent = s.message || 'Every scene written.';
+    document.getElementById('result-title').textContent = 'Complete';
+    if (s.unlocked) {
+      document.getElementById('result-copy').textContent = 'Download the full book as PDF or editable DOCX.';
+      document.getElementById('actions').innerHTML =
+        `<a class="btn primary" href="/download/chatstory/${jobId}/full">Download PDF</a>` +
+        (s.docx_available ? `<a class="btn primary" href="/download/chatstory/${jobId}/docx">Download DOCX</a>` : '') +
+        `<a class="btn secondary" href="/job/${jobId}/live" target="_blank">Read online</a>` +
+        `<a class="btn secondary" href="/pdf-clipart">✨ Enhance my PDF</a>`;
+    } else {
+      document.getElementById('result-copy').textContent = 'Preview is free. Unlock to download the full PDF + editable DOCX.';
+      document.getElementById('actions').innerHTML =
+        `<a class="btn secondary" href="/preview/${jobId}">Open free preview</a>` +
+        `<a class="btn primary" href="/unlock/chatstory/${jobId}">Unlock full book</a>`;
+    }
+  } else if (s.state === 'cancelled') {
+    title.textContent = 'Generation cancelled.';
+    msg.textContent = s.message || 'We kept what was written so far.';
+    document.getElementById('result-title').textContent = 'Cancelled — partial book kept';
+    document.getElementById('result-copy').textContent = 'You can read what was written, or start over.';
+    document.getElementById('actions').innerHTML =
+      (s.has_live_preview ? `<a class="btn secondary" href="/job/${jobId}/live" target="_blank">Read partial</a>` : '') +
+      `<button class="btn primary" onclick="retryJob(this)">Start over</button>`;
+  } else if (s.state === 'failed') {
+    title.textContent = 'Generation failed';
+    msg.textContent = s.error || s.message || 'Something interrupted us.';
     document.getElementById('result-title').textContent = 'We couldn’t finish this one';
-    document.getElementById('result-copy').textContent = s.error || s.message || 'Something interrupted us.';
+    document.getElementById('result-copy').textContent = s.error || s.message || '';
     document.getElementById('actions').innerHTML =
       `<button class="btn primary" onclick="retryJob(this)">Try again</button>` +
       (supportEmail ? `<a class="btn secondary" href="mailto:${supportEmail}?subject=ChatStory%20job%20${jobId}">Contact support</a>` : '');
     document.getElementById('error-box').innerHTML = `<div class="error">${s.error || s.message || 'Unknown error'}</div>`;
+  } else {
+    // In progress
+    title.textContent = s.queue_position ? `You're #${s.queue_position} in line` : 'Keeping every word.';
+    msg.textContent = (s.message || 'Working…') + scenes;
+    document.getElementById('result-title').textContent = 'In progress';
+    const acts = [];
+    if (s.has_live_preview) acts.push(`<a class="btn secondary" href="/job/${jobId}/live" target="_blank">Preview so far</a>`);
+    acts.push(`<button class="btn secondary" onclick="cancelJob(this)">Cancel generation</button>`);
+    document.getElementById('result-copy').textContent = s.has_live_preview
+      ? 'It’s writing. Open the live preview to read scenes as they appear — cancel if the quality looks off.'
+      : 'Setting up… the live preview button appears once the first scenes are written.';
+    document.getElementById('actions').innerHTML = acts.join('');
   }
 }
-function stateTitle(state) {
-  return ({queued:'Queued', parsing:'Parsing export', analyzing:'Computing signals', generating_story:'Writing', writing:'Writing', rendering:'Rendering PDF', failed:'Something stopped'})[state] || state;
-}
-async function pay() {
-  const resp = await fetch(`/api/pay/${jobId}`, {method:'POST'});
-  if (resp.ok) window.location.href = `/full/${jobId}`;
-}
+
 poll();
-timer = setInterval(poll, 2500);
+timer = setInterval(poll, 3000);
 </script>
 </body>
 </html>

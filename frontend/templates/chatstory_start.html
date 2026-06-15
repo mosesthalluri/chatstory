@@ -46,13 +46,10 @@
       <div class="eyebrow">Your chat at a glance</div>
       <h2 id="summary"></h2>
       <div id="bars"></div>
-      <div class="range" style="margin-top:16px">
-        <label>From<input type="date" id="from"></label>
-        <label>To<input type="date" id="to"></label>
-      </div>
+      <p class="muted" style="margin-top:12px">Your whole chat is kept — every message, nothing skipped except links and media. Big chats make a big book, and that's the point.</p>
     </div>
     <div class="card">
-      <div class="eyebrow">Your storybook</div>
+      <div class="eyebrow">Your book</div>
       <div class="price"><span id="price">—</span></div>
       <p class="muted" id="price-note">Preview is free. You only pay to unlock the full book.</p>
       <label style="display:block;margin:14px 0 6px">Where should we send updates?</label>
@@ -97,9 +94,8 @@ document.getElementById('terms-agree').addEventListener('click', () => {
 });
 if (!termsAccepted()) openTerms();
 const TH = {{ thresholds|tojson }};
-const PV = {{ per_volume|tojson }};
 const cur = "{{ currency }}";
-let JOB = null, PER_MONTH = {};
+let JOB = null;
 
 const $ = id => document.getElementById(id);
 const dz = $('drop-zone'), fi = $('file-input'), eb = $('error-box');
@@ -124,48 +120,24 @@ async function analyze(file){
 
 function fmt(n){ return (n||0).toLocaleString(); }
 
+let TOTAL = 0;
+function priceFor(n){ return n>=TH.large?PRICES.large : n>=TH.medium?PRICES.medium : PRICES.small; }
+
 function showAnalysis(a){
-  PER_MONTH=a.per_month||{};
+  TOTAL = a.total_messages || 0;
   $('step-upload').style.display='none';
   $('step-choose').style.display='grid';
-  $('summary').textContent = `${fmt(a.total_messages)} messages · ${a.first} → ${a.last}`;
+  $('summary').textContent = `${fmt(TOTAL)} messages · ${a.first} → ${a.last}`;
   const peak=Math.max(1,...a.per_year.map(y=>y[1]));
   $('bars').innerHTML=a.per_year.map(([yr,ct])=>`<div class="bar-row"><div class="yr">${yr}</div><div class="bar"><span style="width:${Math.round(ct/peak*100)}%"></span></div><div class="ct">${fmt(ct)}</div></div>`).join('');
-  $('from').value=a.first; $('from').min=a.first; $('from').max=a.last;
-  $('to').value=a.last; $('to').min=a.first; $('to').max=a.last;
-  recalc();
-  $('from').addEventListener('change',recalc);
-  $('to').addEventListener('change',recalc);
-}
-
-function selectedCount(){
-  const f=($('from').value||'').slice(0,7), t=($('to').value||'').slice(0,7);
-  let n=0;
-  for(const [ym,c] of Object.entries(PER_MONTH)){
-    if((!f||ym>=f)&&(!t||ym<=t)) n+=c;
-  }
-  return n;
-}
-function estVolumes(n){ return Math.max(1, Math.min(1 + Math.floor(n / PV.divisor), PV.max)); }
-function priceFor(n){
-  if (PV.price > 0) return estVolumes(n) * PV.price;
-  return n>=TH.large?PRICES.large : n>=TH.medium?PRICES.medium : PRICES.small;
-}
-function recalc(){
-  const n=selectedCount();
-  $('price').textContent = cur+priceFor(n);
-  if (PV.price > 0) {
-    const v = estVolumes(n);
-    $('price-note').textContent = `${fmt(n)} messages · about ${v} volume${v===1?'':'s'} · estimated, preview is free.`;
-  } else {
-    $('price-note').textContent = `${fmt(n)} messages selected · preview is free, pay only to unlock.`;
-  }
+  $('price').textContent = cur+priceFor(TOTAL);
+  $('price-note').textContent = `${fmt(TOTAL)} messages · preview is free, pay only to unlock the full book.`;
 }
 
 $('go').addEventListener('click',async()=>{
   $('error-box2').innerHTML='';
   const fd=new FormData();
-  fd.append('date_from',$('from').value); fd.append('date_to',$('to').value); fd.append('email',$('email').value);
+  fd.append('email',$('email').value);
   $('go').disabled=true; $('go').textContent='Starting…';
   try{
     const r=await fetch(`/api/chatstory/${JOB}/start`,{method:'POST',body:fd});

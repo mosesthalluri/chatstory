@@ -143,3 +143,39 @@ async def render_html_to_pdf(html: str, output_path: Path) -> Path:
     AND so we avoid the Windows asyncio subprocess NotImplementedError.
     """
     return await asyncio.to_thread(_render_sync, html, output_path)
+
+
+def _render_sync_a4(html: str, output_path: Path) -> Path:
+    """Synchronous A4 render with print-safe margins and page numbers in the
+    footer. Used for the faithful ChatStory book. Page size + margins come from
+    the template's `@page { size: A4; margin: ... }` (prefer_css_page_size)."""
+    from playwright.sync_api import sync_playwright
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    footer = (
+        '<div style="width:100%;font-size:8px;color:#999;text-align:center;'
+        'font-family:Arial,sans-serif;padding-top:2mm;">'
+        '<span class="pageNumber"></span> / <span class="totalPages"></span></div>'
+    )
+    with sync_playwright() as p:
+        browser = p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
+        try:
+            page = browser.new_context().new_page()
+            page.set_content(html, wait_until="load")
+            page.pdf(
+                path=str(output_path),
+                format="A4",
+                print_background=True,
+                prefer_css_page_size=True,
+                display_header_footer=True,
+                header_template="<span></span>",
+                footer_template=footer,
+            )
+        finally:
+            browser.close()
+    return output_path
+
+
+async def render_a4_pdf(html: str, output_path: Path) -> Path:
+    """Render an A4 PDF (faithful book) off the event loop thread."""
+    return await asyncio.to_thread(_render_sync_a4, html, output_path)

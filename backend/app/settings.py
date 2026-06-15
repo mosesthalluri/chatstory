@@ -136,7 +136,13 @@ class Settings(BaseSettings):
 
     # Queue (local hardware: keep concurrent pipelines low)
     QUEUE_MAX_CONCURRENT: int = 1
-    QUEUE_JOB_TIMEOUT_SECONDS: int = 7200
+    # Faithful ChatStory books over a whole large chat can run for a long time
+    # (quality over speed, by design). Generous cap so big jobs aren't killed
+    # mid-run; lower it if you want a hard stop sooner.
+    QUEUE_JOB_TIMEOUT_SECONDS: int = 86400
+    # Per-scene LLM timeout for the faithful book's scene-setting line. On
+    # timeout we fall back to a deterministic grounded opener (never hangs).
+    FAITHFUL_SCENE_TIMEOUT_SECONDS: int = 120
     # Rough per-job time used to estimate queue wait time shown to users.
     AVG_JOB_SECONDS: int = 600
 
