@@ -5,6 +5,14 @@
 <title>Unlock · ChatStory</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/app.css">
+<style>
+  .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.25);
+    border-top-color: #E8A87C; border-radius: 50%; display: inline-block;
+    animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .approved-banner { background: #1f7a4d; color: #fff; border-radius: 10px;
+    padding: 12px 16px; margin-bottom: 16px; font-weight: 600; }
+</style>
 </head>
 <body>
 <main class="shell">
@@ -99,10 +107,13 @@
           <input name="screenshot" type="file" accept="image/*">
           <button class="btn primary" type="submit">Submit for verification</button>
         </form>
-        <p class="muted">Status: <strong>{{ payment.status }}</strong>
-          {% if payment.status == 'submitted' %} — waiting for admin approval. Refresh after verification.{% endif %}
-          {% if payment.status == 'verified' %} — approved. If downloads do not appear, refresh this page.{% endif %}
+        <p class="muted">Status: <strong id="pay-status">{{ payment.status }}</strong>
+          {% if payment.status == 'submitted' %} — payment submitted. We’re verifying it (usually within 12 hours). <strong>This page updates automatically</strong> the moment it’s approved — no need to refresh.{% endif %}
+          {% if payment.status == 'verified' %} — approved. Loading your downloads…{% endif %}
         </p>
+        <div id="approval-watch" class="muted" style="margin-top:8px;display:flex;align-items:center;gap:8px">
+          <span class="spinner" aria-hidden="true"></span><span>Waiting for approval…</span>
+        </div>
       {% elif payment and payment.status == 'verified' and not unlocked %}
         <p class="muted">Payment verified — syncing unlock… refresh the page.</p>
       {% elif payment %}
@@ -129,5 +140,50 @@
     </div>
   </section>
 </main>
+
+<script>
+// After payment is submitted, the admin verifies it out-of-band. Poll the job
+// status and update the page the moment it's approved — so the user gets a
+// clear confirmation and the download appears without manually refreshing.
+(function(){
+  var jobId = "{{ job_id }}";
+  var alreadyUnlocked = {{ 'true' if unlocked else 'false' }};
+  var hasPayment = {{ 'true' if payment else 'false' }};
+  if (alreadyUnlocked || !hasPayment) return;
+
+  function confirmAndReload(){
+    var watch = document.getElementById('approval-watch');
+    if (watch) watch.innerHTML = '<span>✓ Approved! Loading your downloads…</span>';
+    var hero = document.querySelector('.hero');
+    if (hero) {
+      var b = document.createElement('div');
+      b.className = 'approved-banner';
+      b.textContent = '✓ Payment approved — preparing your downloads…';
+      hero.parentNode.insertBefore(b, hero.nextSibling);
+    }
+    setTimeout(function(){ location.reload(); }, 1200);
+  }
+
+  var tries = 0;
+  var timer = setInterval(async function(){
+    tries++;
+    try {
+      var r = await fetch('/api/status/' + jobId, {cache: 'no-store'});
+      if (r.ok) {
+        var d = await r.json();
+        if (d.unlocked || d.payment_status === 'verified') {
+          clearInterval(timer);
+          confirmAndReload();
+          return;
+        }
+        var ps = document.getElementById('pay-status');
+        if (ps && d.payment_status && d.payment_status !== 'none') ps.textContent = d.payment_status;
+      }
+    } catch (e) { /* keep polling */ }
+    // Ease off after ~20 min of waiting to avoid endless polling.
+    if (tries > 240) clearInterval(timer);
+  }, 5000);
+})();
+</script>
 </body>
 </html>
