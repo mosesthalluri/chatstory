@@ -199,6 +199,38 @@ def _deterministic_story(window: list) -> str:
     return " ".join(parts) if parts else "A brief, quiet exchange passed between them."
 
 
+def _clean_prose(text: str) -> str:
+    """Strip stray markdown the local model sometimes emits (**bold**, # heads,
+    > quotes, bullets, code fences) and normalize whitespace, so every chapter
+    renders as clean, uniform prose. Paragraphs stay separated by blank lines."""
+    if not text:
+        return ""
+    t = text.replace("```", "").replace("`", "")
+    t = re.sub(r"\*\*(.+?)\*\*", r"\1", t)
+    t = re.sub(r"__(.+?)__", r"\1", t)
+    t = re.sub(r"(?<!\w)[*_](.+?)[*_](?!\w)", r"\1", t)
+    lines = []
+    for ln in t.splitlines():
+        ln = re.sub(r"^\s{0,3}#{1,6}\s*", "", ln)      # markdown headings
+        ln = re.sub(r"^\s*>\s?", "", ln)               # blockquotes
+        ln = re.sub(r"^\s*[-*+]\s+", "", ln)           # bullet markers
+        ln = re.sub(r"^\s*\d+[.)]\s+", "", ln)         # numbered lists
+        m = re.match(r"^\s*(?:TITLE|STORY)\s*:\s*(.*)$", ln, re.IGNORECASE)
+        if m:
+            ln = m.group(1)
+        lines.append(ln)
+    t = "\n".join(lines)
+    t = re.sub(r"[ \t]+", " ", t)
+    t = re.sub(r"\n{3,}", "\n\n", t).strip()
+    return t
+
+
+def _clean_title(text: str) -> str:
+    t = _clean_prose(text or "").splitlines()
+    t = t[0] if t else ""
+    return t.strip().strip('"').strip("'").rstrip(".").strip()
+
+
 def _parse_title_story(text: str) -> tuple[str, str]:
     title, story, cur = "", "", None
     buf: list[str] = []
@@ -257,7 +289,8 @@ async def _narrate_chapter(windows: list[list], people: str) -> tuple[str, str, 
             resp = await _llm_prose(CHAPTER_PROMPT.format(people=people, dialogue=dialogue, rules=_RULES))
             if resp:
                 t, s = _parse_title_story(resp)
-                title = t
+                title = _clean_title(t)
+                s = _clean_prose(s)
                 if s:
                     parts.append(s)
                 else:
@@ -266,8 +299,9 @@ async def _narrate_chapter(windows: list[list], people: str) -> tuple[str, str, 
                 parts.append(_deterministic_story(window)); used_fallback = True
         else:
             resp = await _llm_prose(CONTINUE_PROMPT.format(people=people, dialogue=dialogue, rules=_RULES))
-            if resp and resp.strip():
-                parts.append(resp.strip())
+            s = _clean_prose(resp or "")
+            if s:
+                parts.append(s)
             else:
                 parts.append(_deterministic_story(window)); used_fallback = True
     if not title or len(title) < 3 or title.lower().startswith("chapter"):
